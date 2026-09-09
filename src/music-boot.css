@@ -1,0 +1,10 @@
+/* Player controls use 20 px SVG icons. The cinematic SVGs must instead fill
+   their original measured containers before the one 1920 × 1080 stage scale. */
+.music-boot-stage .boot-logo > svg,
+.music-boot-stage .welcome-logo > svg,
+.music-boot-stage .scan > svg,
+.music-boot-stage .boot-background > svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}

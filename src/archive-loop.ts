@@ -11,6 +11,7 @@ export const ROW_SPACING = 0.62;
 const POOL_LANES = [0, 1, 2, 3, 4, -2, -1, 5, 6];
 
 export function wrap(value: number, count: number) {
+  if (count <= 0) return 0;
   return ((value % count) + count) % count;
 }
 
@@ -21,12 +22,13 @@ export function nearestOccurrence(
   center: number,
   period: number,
 ) {
+  if (period <= 0) return value;
   return value + Math.floor((center - value + period / 2) / period) * period;
 }
 
 export function fileAtCell({ lane, row }: ArchiveCell) {
   const files = columnFiles(wrap(lane, archiveColumns.length));
-  return files[wrap(row - 12, files.length)];
+  return files[wrap(row - 12, files.length)] ?? -1;
 }
 
 export function selectionCell(

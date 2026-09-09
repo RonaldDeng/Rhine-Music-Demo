@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>音乐启动 Logo 尺寸检查</title>
+    <style>
+      .boot-review-controls { position:fixed;right:16px;bottom:16px;z-index:2000;width:min(405px,calc(100vw - 32px));padding:14px;background:#faf9f2ed;border:1px solid #c5c6bd;color:#222;font:12px/1.6 system-ui,sans-serif;box-shadow:0 4px 24px #0001; }
+      .boot-review-controls strong { display:block;font-size:13px;margin-bottom:8px; }
+      .boot-review-buttons { display:flex;gap:6px; }
+      .boot-review-controls button { padding:7px 10px;border:1px solid #abb0a9;color:#222;background:#fff;cursor:pointer;font:inherit; }
+      .boot-review-controls button[aria-pressed=true] { background:#26312b;color:#fff; }
+      .boot-review-controls output { display:block;margin-top:8px;white-space:pre-wrap;font:11px/1.7 ui-monospace,monospace; }
+    </style>
+  </head>
+  <body>
+    <main id="stage" class="music-app" data-mode="archive" data-theme="day"></main>
+    <!-- Outside the music parent: MusicBoot makes its own siblings inert. -->
+    <aside class="boot-review-controls" aria-label="启动画面检查控制">
+      <strong>启动 Logo 尺寸检查 · 固定画面 · 无声音 / 无三维渲染</strong>
+      <div class="boot-review-buttons">
+        <button type="button" data-review-phase="logo" aria-pressed="true">主 Logo</button>
+        <button type="button" data-review-phase="scan" aria-pressed="false">扫描圆环</button>
+        <button type="button" data-review-phase="welcome" aria-pressed="false">欢迎 Logo</button>
+      </div>
+      <output id="boot-review-metrics" aria-live="polite">正在载入…</output>
+    </aside>
+    <script type="module">
+      // Match the music application's stylesheet imports and nesting. This is
+      // intentionally not the legacy archive stylesheet-only review page.
+      import "/src/style.css";
+      import "/src/quality-settings.css";
+      import "/src/document-decryption.css";
+      import "/src/decryption.css";
+      import "/src/music.css";
+      import { MusicBoot } from "/src/music-boot.ts";
+
+      const parent = document.querySelector("#stage");
+      const output = document.querySelector("#boot-review-metrics");
+      const phases = {
+        logo: { time:5.56, selector:".boot-logo > svg", width:296, height:177, name:"主 Logo" },
+        scan: { time:15.5, selector:".scan > svg", width:1920, height:1080, name:"扫描圆环" },
+        welcome: { time:20.4, selector:".welcome-logo > svg", width:203, height:121, name:"欢迎 Logo" },
+      };
+      let phase = "logo";
+      const boot = new MusicBoot(parent, { reduced:false });
+      function fit() {
+        parent.dataset.layout = innerWidth/innerHeight<1.05 ? "portrait" : innerWidth<1100 ? "compact" : "desktop";
+      }
+      function measure() {
+        const target = phases[phase];
+        const svg = parent.querySelector(target.selector);
+        const style = getComputedStyle(svg), box = svg.getBoundingClientRect(), bounds = parent.getBoundingClientRect();
+        const width = parseFloat(style.width), height = parseFloat(style.height);
+        const scale = Math.min(bounds.width/1920,bounds.height/1080);
+        const passed = Math.abs(width-target.width)<.1 && Math.abs(height-target.height)<.1;
+        const evidence = { phase, appTime:target.time, referenceFrame:Number(parent.querySelector(".music-boot-stage").dataset.bootFrame), selector:target.selector, cssWidth:width, cssHeight:height, screenWidth:box.width, screenHeight:box.height, stageScale:scale, passed };
+        output.dataset.evidence = JSON.stringify(evidence);
+        output.textContent = `${passed ? "尺寸正常" : "尺寸异常"} · ${target.name} · 原片第 ${evidence.referenceFrame} 帧\nCSS ${width} × ${height}（设计 ${target.width} × ${target.height}）\n屏幕 ${box.width.toFixed(1)} × ${box.height.toFixed(1)} · 舞台缩放 ${scale.toFixed(4)}\nApp ${target.time.toFixed(2)}s / 重播后 ${(target.time-1.76).toFixed(2)}s`;
+      }
+      function freeze(next) {
+        phase = next;
+        fit();
+        boot.start(0,true);
+        // start(0) sets startedAt=-1.76, so subtract that initial app time.
+        boot.update(phases[phase].time-1.76);
+        document.querySelectorAll("[data-review-phase]").forEach(button=>button.setAttribute("aria-pressed",String(button.dataset.reviewPhase===phase)));
+        measure();
+      }
+      document.querySelectorAll("[data-review-phase]").forEach(button=>button.addEventListener("click",()=>freeze(button.dataset.reviewPhase)));
+      window.addEventListener("resize",()=>{fit();measure();});
+      await Promise.all([document.fonts.load("400 20px MiSans"),document.fonts.load("600 20px MiSans")]);
+      freeze("logo");
+    </script>
+  </body>
+</html>

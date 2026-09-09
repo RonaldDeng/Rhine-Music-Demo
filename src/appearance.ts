@@ -9,6 +9,7 @@ type Palette = { high: Surface; low?: Surface };
 // on one mesh so transparent shells never overlap during a quality change.
 export class CardAppearance {
   private palettes = new Map<string, Palette>();
+  private warmth = { value: 1 };
 
   register(name: string, high: Surface, low?: Surface) {
     this.palettes.set(name, { high, low });
@@ -33,8 +34,9 @@ export class CardAppearance {
           shader.fragmentShader = internalOpticsFragment(shader.fragmentShader);
         shader.uniforms.archiveQuality = amount;
         shader.uniforms.archiveClarity = clarity;
+        shader.uniforms.archiveWarmth = this.warmth;
         shader.fragmentShader =
-          "uniform float archiveQuality;\nuniform float archiveClarity;\n" +
+          "uniform float archiveQuality;\nuniform float archiveClarity;\nuniform float archiveWarmth;\n" +
           shader.fragmentShader;
         if (name === "Frosted_Polymer") {
           shader.vertexShader =
@@ -60,7 +62,7 @@ export class CardAppearance {
           );
           shader.fragmentShader = shader.fragmentShader.replace(
             "#include <color_fragment>",
-            "#include <color_fragment>\ndiffuseColor.rgb *= mix(mix(vec3(0.40, 0.30, 0.20), vec3(1.0, 0.98, 0.94), smoothstep(0.1, 1.0, vArchiveHeight)), vec3(1.0), archiveQuality);",
+            "#include <color_fragment>\nvec3 archiveTint = mix(mix(vec3(0.68, 0.76, 0.86), vec3(1.0), smoothstep(0.1, 1.0, vArchiveHeight)), mix(vec3(0.40, 0.30, 0.20), vec3(1.0, 0.98, 0.94), smoothstep(0.1, 1.0, vArchiveHeight)), archiveWarmth);\ndiffuseColor.rgb *= mix(archiveTint, vec3(1.0), archiveQuality);",
           );
           shader.fragmentShader = shader.fragmentShader.replace(
             "#include <roughnessmap_fragment>",
@@ -122,6 +124,7 @@ export class CardAppearance {
       const mesh = child as THREE.Mesh;
       const palette = this.palettes.get(mesh.userData.surface);
       if (!palette) {
+        if (mesh.userData.albumCover) continue;
         // The printed canvas belongs to this file, including returning copies.
         (mesh.material as THREE.MeshBasicMaterial).opacity = value;
         continue;
@@ -165,10 +168,31 @@ export class CardAppearance {
     }
   }
 
+  setTheme(theme: "day" | "night" | "dusk") {
+    this.warmth.value = theme === "day" ? 1 : 0;
+    for (const [name, palette] of this.palettes) {
+      for (const mat of [palette.high, palette.low]) {
+        if (!mat) continue;
+        mat.userData.dayColor ??= mat.color.clone();
+        mat.userData.dayAttenuation ??= mat.attenuationColor?.clone();
+        if (theme === "day") {
+          mat.color.copy(mat.userData.dayColor);
+          if (mat.userData.dayAttenuation) mat.attenuationColor.copy(mat.userData.dayAttenuation);
+        } else if (["Frosted_Polymer", "Ivory_Edges"].includes(name)) {
+          mat.color.set(theme === "night" ? "#f6fbff" : "#e6f0f2");
+          mat.attenuationColor?.set(theme === "night" ? "#dceafd" : "#c8dbe1");
+        } else if (name === "Optical_Diffuser") {
+          mat.color.set(theme === "night" ? "#c6d6e5" : "#91a4af");
+        } else if (name === "Index_Inlay") mat.color.set(theme === "night" ? "#d7e9ff" : "#b9d2df");
+      }
+    }
+  }
+
   dispose(group: THREE.Group) {
     for (const child of group.children) {
       const mesh = child as THREE.Mesh;
       const mat = mesh.material as THREE.MeshBasicMaterial;
+      if (mesh.userData.albumCover) mesh.userData.coverDisposed = true;
       if (!mesh.userData.surface) mat.map?.dispose();
       mat.dispose();
     }

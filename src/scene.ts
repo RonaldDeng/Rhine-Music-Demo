@@ -12,7 +12,8 @@ import { applyTextureQuality, resizeQuality } from "./quality-renderer";
 import { CardAppearance } from "./appearance";
 import { configureInternalOptics } from "./internal-optics";
 import { DecryptionController } from "./decryption";
-import { fileAtSlot, fileLocation } from "./data";
+import { archiveColumns, columnFiles, fileAtSlot, fileLocation, musicLibrary, records, slotStride } from "./data";
+import { CoverAtlas } from "./cover-atlas";
 import {
   cellKey,
   sameCell,
@@ -48,6 +49,9 @@ const ease = (t: number) => {
   t = THREE.MathUtils.clamp(t, 0, 1);
   return t * t * t * (t * (t * 6 - 15) + 10);
 };
+// Music browsing exposes a little more artwork; original archives and the
+// reference animation keep their 0.4 preview height and existing camera path.
+export const MUSIC_PREVIEW_LIFT = 0.9;
 export class ArchiveScene {
   readonly renderer: THREE.WebGLRenderer;
   readonly scene = new THREE.Scene();
@@ -105,6 +109,11 @@ export class ArchiveScene {
   private rotation = 0;
   private targetRotation = 0;
   private light: THREE.DirectionalLight;
+  private floor: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshStandardMaterial>;
+  private stars?: THREE.Points<THREE.BufferGeometry, THREE.PointsMaterial>;
+  private covers?: CoverAtlas;
+  private theme: "day" | "night" | "dusk" = "day";
+  private themeWarmth = { value: 1 };
   private clock = 0;
   private loaded = false;
   private labelCanvas = document.createElement("canvas");
@@ -162,7 +171,7 @@ export class ArchiveScene {
     this.light.shadow.normalBias = lightingLook === "refined" ? 0.018 : 0.035;
     this.light.shadow.bias = lightingLook === "refined" ? -0.00012 : -0.0003;
     this.light.shadow.radius = 4;
-    const floor = new THREE.Mesh(
+    const floor = this.floor = new THREE.Mesh(
       new THREE.PlaneGeometry(200, 200),
       new THREE.MeshStandardMaterial({ color: "#d8c9b9", roughness: 0.95 }),
     );
@@ -170,6 +179,16 @@ export class ArchiveScene {
     floor.position.y = -4.63;
     floor.receiveShadow = true;
     this.scene.add(floor);
+    const starPositions: number[] = [];
+    let seed = 417;
+    const random = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
+    for (let i = 0; i < 140; i++) starPositions.push(random() * 2 - 1, random() * 2 - 1, 0);
+    const starGeometry = new THREE.BufferGeometry();
+    starGeometry.setAttribute("position", new THREE.Float32BufferAttribute(starPositions, 3));
+    this.stars = new THREE.Points(starGeometry, new THREE.PointsMaterial({ color: "#dbeaff", size: 1.5, sizeAttenuation: false, transparent: true, opacity: .6, depthWrite: false, fog: false }));
+    this.stars.visible = false;
+    this.stars.frustumCulled = false;
+    this.scene.add(this.stars);
     this.camera.position.set(-62.26, 35.98, 43.28);
     this.cameraAim.set(-0.5, 1.1, 0.4);
     this.camera.fov = 6.15;
@@ -295,6 +314,7 @@ export class ArchiveScene {
         arrayMat.transparent = false;
         arrayMat.color.set("#fff7ed");
         arrayMat.onBeforeCompile = (shader) => {
+          shader.uniforms.archiveWarmth = this.themeWarmth;
           shader.vertexShader =
             "varying float vPanelHeight;\n" + shader.vertexShader;
           shader.vertexShader = shader.vertexShader.replace(
@@ -302,10 +322,10 @@ export class ArchiveScene {
             "#include <begin_vertex>\nvPanelHeight = position.y / 3.7;",
           );
           shader.fragmentShader =
-            "varying float vPanelHeight;\n" + shader.fragmentShader;
+            "varying float vPanelHeight;\nuniform float archiveWarmth;\n" + shader.fragmentShader;
           shader.fragmentShader = shader.fragmentShader.replace(
             "#include <color_fragment>",
-            "#include <color_fragment>\ndiffuseColor.rgb *= mix(vec3(0.40, 0.30, 0.20), vec3(1.0, 0.98, 0.94), smoothstep(0.1, 1.0, vPanelHeight));",
+            "#include <color_fragment>\ndiffuseColor.rgb *= mix(mix(vec3(0.68, 0.76, 0.86), vec3(1.0), smoothstep(0.1, 1.0, vPanelHeight)), mix(vec3(0.40, 0.30, 0.20), vec3(1.0, 0.98, 0.94), smoothstep(0.1, 1.0, vPanelHeight)), archiveWarmth);",
           );
         };
         arrayMat.roughness = 0.28;
@@ -333,6 +353,9 @@ export class ArchiveScene {
       this.instances.push(inst);
       this.scene.add(inst);
     }
+    this.covers = new CoverAtlas(count, this.renderer.capabilities.maxTextureSize, this.renderer.capabilities.getMaxAnisotropy());
+    this.scene.add(this.covers.array);
+    this.model.add(this.covers.selected);
     this.labelCanvas.width = 1024;
     this.labelCanvas.height = 440;
     this.labelTexture = new THREE.CanvasTexture(this.labelCanvas);
@@ -349,13 +372,68 @@ export class ArchiveScene {
       }),
     );
     label.position.set(-1.36, 3.04, 0.255);
+    label.userData.printedLabel = true;
     this.model.add(label);
     this.appearance.prepare(this.model);
     this.appearance.apply(this.model, 0);
     this.drawLabel(0);
     this.scene.add(this.model);
-    this.model.position.copy(this.positions[this.selectedSlot]);
+    this.model.position.copy(this.positions[this.selectedSlot] ?? this.cellPosition(this.selectedCell));
     this.loaded = true;
+    if (musicLibrary) await this.refreshLibrary();
+    this.setTheme(this.theme);
+  }
+
+  /** Call after setMusicAlbums; the pool remains fixed at 288 visible instances. */
+  async refreshLibrary(selectedIndex = 0) {
+    if (!this.loaded || !this.covers) return;
+    for (const old of this.outgoing) { this.scene.remove(old.group); this.appearance.dispose(old.group); }
+    this.outgoing = [];
+    this.covers.reset();
+    this.covers.array.visible = musicLibrary && records.length > 0;
+    this.covers.selected.visible = musicLibrary && records.length > 0;
+    this.model.visible = records.length > 0;
+    for (const inst of this.instances) inst.visible = records.length > 0;
+    for (const child of this.model.children) {
+      // The album print sits in front of the original physical assembly. Keep
+      // its optical rings and shell parts available for rotation/disassembly.
+      if (child.userData.surface) child.visible = !musicLibrary || child.userData.surface !== "Printed_Label";
+      if (child.userData.printedLabel) child.visible = !musicLibrary;
+    }
+    const index = Math.max(0, Math.min(records.length - 1, selectedIndex));
+    const location = fileLocation(index);
+    this.selectedSlot = location.slot;
+    this.selectedCell = { lane: location.lane, row: location.row };
+    this.coordinateOrigin = { lane: 0, row: 0 };
+    this.lift = { value: 0, velocity: 0 };
+    this.rotation = this.targetRotation = 0;
+    this.returnY = null;
+    this.pulses = [];
+    this.pendingPulse = null;
+    this.shoulder = { value: location.row, velocity: 0 };
+    this.laneFocus = { value: location.lane, velocity: 0 };
+    this.columnCamera = { value: (location.lane - 2) * COLUMN_SPACING, velocity: 0 };
+    await this.covers.select(records[index]);
+  }
+
+  setTheme(theme: "day" | "night" | "dusk") {
+    this.theme = theme;
+    this.themeWarmth.value = theme === "day" ? 1 : 0;
+    const background = theme === "night" ? "#07111f" : theme === "dusk" ? "#b9c7cc" : "#eae5e1";
+    (this.scene.background as THREE.Color).set(background);
+    (this.scene.fog as THREE.Fog).color.set(background);
+    this.floor.material.color.set(theme === "night" ? "#0b1828" : theme === "dusk" ? "#a6b8c0" : "#d8c9b9");
+    this.renderer.toneMappingExposure = theme === "night" ? 1.08 : 1.05;
+    this.scene.environmentIntensity = theme === "night" ? .68 : .48;
+    this.light.color.set(theme === "night" ? "#e5f0ff" : theme === "dusk" ? "#eff8ff" : "#fff7ed");
+    this.light.intensity = theme === "night" ? 1.7 : 1.4;
+    for (const child of this.scene.children) if (child instanceof THREE.HemisphereLight) {
+      child.color.set(theme === "night" ? "#e2eeff" : "#fffaf5");
+      child.groundColor.set(theme === "night" ? "#56708c" : theme === "dusk" ? "#718898" : "#b4a18c");
+      child.intensity = theme === "night" ? .9 : .65;
+    }
+    if (this.stars) this.stars.visible = theme === "night";
+    this.appearance.setTheme(theme);
   }
 
   private assemblyTemplate?: Promise<THREE.Group>;
@@ -409,6 +487,7 @@ export class ArchiveScene {
     );
     label.position.set(-1.36, 3.04, 0.255);
     label.userData.assemblyPart = "cover";
+    label.userData.printedLabel = true;
     model.add(label);
     meshes.push(label);
     return {
@@ -499,14 +578,21 @@ export class ArchiveScene {
   private rebaseCoordinates() {
     // Periodically reduce the logical coordinates while preserving every
     // relative position, spring velocity, ripple and idle phase.
+    const gcd = (a: number, b: number): number => b ? gcd(b, a % b) : a;
+    const rowPeriod = archiveColumns.reduce((period, _, lane) => {
+      const count = columnFiles(lane).length || 1;
+      const next = period / gcd(period, count) * count;
+      return next > 1e6 ? Infinity : next;
+    }, 1);
+    const lanePeriod = Math.max(1, archiveColumns.length);
     const shift = {
       lane:
         Math.abs(this.selectedCell.lane) > 2048
-          ? Math.round((this.selectedCell.lane - 2) / 5) * 5
+          ? Math.round((this.selectedCell.lane - 2) / lanePeriod) * lanePeriod
           : 0,
       row:
-        Math.abs(this.selectedCell.row) > 2048
-          ? Math.floor((this.selectedCell.row - 12) / 8) * 8
+        Math.abs(this.selectedCell.row) > Math.max(2048, rowPeriod * 2)
+          ? Math.floor((this.selectedCell.row - 12) / rowPeriod) * rowPeriod
           : 0,
     };
     if (!shift.lane && !shift.row) return;
@@ -532,6 +618,7 @@ export class ArchiveScene {
     }
   }
   select(index: number, navigation?: ArchiveNavigation) {
+    if (!records[index]) return;
     this.lastInteraction = this.clock;
     const next = fileLocation(index).slot;
     const canonical = fileLocation(index);
@@ -542,6 +629,8 @@ export class ArchiveScene {
     if (this.looping && changed && this.loaded && this.lift.value > 0.0001) {
       const group = this.model.clone(true);
       this.appearance.prepare(group);
+      const cover = group.children.find((child) => child.userData.albumCover) as THREE.Mesh | undefined;
+      if (cover) this.covers?.snapshot(cover);
       const label = group.children[group.children.length - 1] as THREE.Mesh;
       const canvas = document.createElement("canvas");
       canvas.width = 1024;
@@ -592,6 +681,7 @@ export class ArchiveScene {
     } else this.emitPulse(cell);
     this.targetRotation = 0;
     this.drawLabel(index);
+    if (musicLibrary) void this.covers?.select(records[index]);
   }
   private emitPulse(cell: ArchiveCell) {
     this.pulses.push({ ...cell, time: this.clock });
@@ -704,7 +794,7 @@ export class ArchiveScene {
         return;
       }
       if (e.pointerType !== "mouse") return;
-      if (this.reveal < 0.8 || this.detail > 0.2 || !this.loaded) return;
+      if (this.reveal < 0.8 || this.detail > 0.2 || !this.loaded || !records.length) return;
       this.cursor.set(
         ((e.clientX - r.left) / r.width) * 2 - 1,
         (-(e.clientY - r.top) / r.height) * 2 + 1,
@@ -738,6 +828,7 @@ export class ArchiveScene {
         this.detail > 0.2 ||
         this.reveal < 0.8 ||
         !this.loaded
+        || !records.length
       )
         return;
       const r = canvas.getBoundingClientRect();
@@ -781,6 +872,7 @@ export class ArchiveScene {
     this.last = time;
     this.clock = time;
     if (!this.loaded) return;
+    const previewLift = musicLibrary ? MUSIC_PREVIEW_LIFT : 0.4;
     const blend = 1 - Math.exp(-dt * (this.reduced ? 35 : 2.8));
     this.reveal = cinematic
       ? cinematic.reveal
@@ -917,7 +1009,7 @@ export class ArchiveScene {
                     Math.abs(o.cell.row - selectedRow) < 5,
                 )
               ? 0
-              : 0.4 * this.targetReveal,
+              : previewLift * this.targetReveal,
           this.reduced
             ? 35
             : this.deferSelectionPulse &&
@@ -933,7 +1025,7 @@ export class ArchiveScene {
       ? ease((this.lift.value - 0.8) / 2.4)
       : this.returnY !== null
         ? this.detail
-        : ease((this.lift.value - 0.4) / (INSPECTION_LIFT - 0.4));
+        : ease((this.lift.value - previewLift) / (INSPECTION_LIFT - previewLift));
     this.detail = cinematic
       ? cinematic.zoom
       : THREE.MathUtils.lerp(this.detail, cameraTarget, blend);
@@ -1021,8 +1113,13 @@ export class ArchiveScene {
       );
       this.dummy.updateMatrix();
       for (const inst of this.instances) inst.setMatrixAt(i, this.dummy.matrix);
+      if (musicLibrary && this.covers) {
+        this.covers.array.setMatrixAt(i, this.dummy.matrix);
+        this.covers.setSlot(i, records[fileAtCell(this.cells[i])]);
+      }
     }
     for (const inst of this.instances) inst.instanceMatrix.needsUpdate = true;
+    if (musicLibrary && this.covers) this.covers.array.instanceMatrix.needsUpdate = true;
     this.model.position.set(
       chosen.x - trackX,
       chosen.y + field(selectedRow, selectedLane) + this.lift.value,
@@ -1196,6 +1293,13 @@ export class ArchiveScene {
     const renderedDistance = this.camera.position.distanceTo(this.cameraAim);
     fog.near = renderedDistance + THREE.MathUtils.lerp(5, -1, detail);
     fog.far = renderedDistance + THREE.MathUtils.lerp(25, 12, detail);
+    if (this.stars?.visible) {
+      const depth = renderedDistance + 38;
+      this.stars.position.copy(this.camera.position).addScaledVector(this.camera.getWorldDirection(new THREE.Vector3()), depth);
+      this.stars.quaternion.copy(this.camera.quaternion);
+      const halfHeight = Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2)) * depth;
+      this.stars.scale.set(halfHeight * this.camera.aspect, halfHeight, 1);
+    }
 
     this.camera.updateProjectionMatrix();
     this.camera.updateMatrixWorld();
@@ -1240,6 +1344,12 @@ export class ArchiveScene {
         this.quality.depthOfField) /
       100;
     this.renderer.info.reset();
+    // AO normals and bokeh depth render this scene again without moving it.
+    // Music frames share the first pass's shadows; the archive reference keeps
+    // Three's original automatic updates. Animated casters still update each frame.
+    this.renderer.shadowMap.autoUpdate = !musicLibrary;
+    if (musicLibrary && this.renderer.shadowMap.enabled)
+      this.renderer.shadowMap.needsUpdate = true;
     this.composer.render();
   }
   projectCard(x: number, y: number) {
@@ -1289,7 +1399,10 @@ export class ArchiveScene {
       pulses: this.pulses.map((pulse) => ({ ...pulse })),
       referenceTime: Math.round((this.scanTime + 5) * 100) / 100,
       selectedSlot: this.selectedSlot,
-      selectedLane: Math.floor(this.selectedSlot / 32),
+      selectedLane: Math.floor(this.selectedSlot / slotStride),
+      selectedAlbumId: records[fileAtSlot(this.selectedSlot)]?.album?.id ?? null,
+      albumCovers: this.covers?.array.visible ?? false,
+      theme: this.theme,
       selectedCell: { ...this.selectedCell },
       coordinateOrigin: { ...this.coordinateOrigin },
       poolBounds: {
@@ -1305,6 +1418,7 @@ export class ArchiveScene {
       canInspect: this.canInspect,
       returnPhase: this.returnY !== null ? "aligning" : "lowering",
       extraction: Math.round(this.lift.value * 1000) / 1000,
+      previewLift: musicLibrary ? MUSIC_PREVIEW_LIFT : 0.4,
       appearance: Math.round(ease(this.lift.value / 0.4) * 1000) / 1000,
       cameraDetail: Math.round(this.detail * 1000) / 1000,
       idleGain: this.idleGain,

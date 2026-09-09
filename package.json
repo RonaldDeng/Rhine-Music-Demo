@@ -1,5 +1,5 @@
 {
-  "name": "rhine-lab-analysis-os",
+  "name": "rhine-music-demo",
   "version": "1.0.0",
   "license": "MIT",
   "private": true,
@@ -14,10 +14,14 @@
     "export:archives": "node scripts/export-records.mjs",
     "build": "tsc && vite build && node scripts/build-pwa.mjs",
     "format": "prettier --write src scripts index.html package.json tsconfig.json",
-    "preview": "vite preview --host 127.0.0.1"
+    "preview": "vite preview --host 127.0.0.1",
+    "music": "node scripts/music-server.mjs",
+    "check:music": "node --test scripts/check-music-library.mjs scripts/check-album-introductions.mjs && node scripts/check-music-scene.mjs && node --experimental-strip-types --test scripts/check-music-player.mjs"
   },
   "dependencies": {
     "@kitlangton/rolling-number": "0.4.1",
+    "music-metadata": "^11.15.0",
+    "opencc-js": "^1.4.2",
     "three": "^0.183.0"
   },
   "devDependencies": {

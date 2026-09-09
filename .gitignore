@@ -16,3 +16,13 @@ __pycache__/
 .env
 .env.*
 !.env.example
+
+# Machine-local music library data and development state
+.DS_Store
+music-data/
+/library-index.json
+/genre-rules.json
+/artwork/
+*.log
+.codex/
+.agents/

@@ -3,6 +3,9 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { createArchiveLighting } from "./archive-lighting";
 import { damp } from "./motion";
 import { ViewerCameraMotion } from "./viewer-camera";
+import { ViewerAlbumCover } from "./viewer-album-cover";
+import type { MusicAlbum } from "./music-types";
+import { ViewerTheme, type ViewerThemeName } from "./viewer-theme";
 import { normalizeQuality, type RenderQuality } from "./render-quality";
 import {
   applyTextureQuality,
@@ -33,11 +36,18 @@ export class ModelViewer {
   private quality = normalizeQuality(undefined);
   private appliedQuality = "";
   private scene = new THREE.Scene();
+  private theme?: ViewerThemeName;
+  private themeAppearance: ViewerTheme;
   private camera = new THREE.PerspectiveCamera(34, 16 / 9, 0.3, 120);
   private controlCamera = this.camera.clone();
   private cameraMotion = new ViewerCameraMotion(this.camera);
   private controls: OrbitControls;
   private source?: ModelSource;
+  private album: MusicAlbum | null = null;
+  private openedId = "";
+  private openedTitle = "档案模型";
+  private albumCover?: ViewerAlbumCover;
+  private hiddenAlbumLabels = new Map<THREE.Object3D, boolean>();
   private groups = new Map<string, THREE.Group>();
   private spread = { value: 0, velocity: 0 };
   private targetSpread = 0;
@@ -107,7 +117,8 @@ export class ModelViewer {
     this.scene.fog = new THREE.Fog("#eae5e1", 13.5, 26.5);
     // Render-target textures belong to their WebGL context. Recreate the main
     // scene's light room here so this renderer receives its actual illumination.
-    createArchiveLighting(this.renderer, this.scene);
+    const keyLight = createArchiveLighting(this.renderer, this.scene);
+    this.themeAppearance = new ViewerTheme(this.scene, this.renderer, keyLight);
     this.camera.position.copy(this.initialCamera);
     this.controlCamera.copy(this.camera);
     this.controls = new OrbitControls(
@@ -162,6 +173,56 @@ export class ModelViewer {
     this.root.addEventListener("keydown", (event) => this.keydown(event));
   }
 
+  /** Set before open(), or replace the print in an open viewer without resetting its pose. */
+  setAlbum(album: MusicAlbum | null) {
+    this.album = album;
+    this.root.dataset.albumId = album?.id ?? "";
+    this.root.querySelector(".viewer-back span")!.textContent = album ? "返回专辑" : "返回档案";
+    this.renderer.domElement.setAttribute("aria-label", `${album ? "专辑" : "档案"}三维模型：拖动旋转，方向键平移，滚轮或加减键缩放，Home 复位`);
+    this.root.querySelector(".viewer-heading > span")!.textContent = album ? "RHINE MUSIC / ALBUM OBJECT" : "RHINE LAB / OBJECT STUDY";
+    this.root.querySelector('[data-viewer="explode"]')!.innerHTML = `<span>＋</span>${album ? "拆解专辑" : "拆解档案"}`;
+    this.updateHeading();
+    this.attachAlbumCover();
+  }
+
+  /** Themes are opt-in so the original archive viewer keeps its baseline. */
+  setTheme(theme: ViewerThemeName) {
+    this.theme = theme;
+    this.root.dataset.theme = theme;
+    this.themeAppearance.setTheme(theme, this.source?.model);
+  }
+
+  private updateHeading() {
+    this.root.querySelector("#viewer-title")!.textContent = this.album?.title ?? this.openedTitle;
+    this.root.querySelector("#viewer-file")!.textContent = this.album
+      ? `${this.album.artist} / ${this.album.tracks.length} TRACKS`
+      : this.openedId ? `FILE ${this.openedId} / INTERNAL DATABASE` : "";
+  }
+
+  private attachAlbumCover() {
+    this.albumCover?.dispose();
+    this.albumCover = undefined;
+    for (const [mesh, visible] of this.hiddenAlbumLabels) mesh.visible = visible;
+    this.hiddenAlbumLabels.clear();
+    const coverGroup = this.groups.get("cover");
+    if (!this.album || !this.source || !coverGroup) return;
+    this.source.model.traverse(mesh => {
+      if (mesh.userData.printedLabel || mesh.userData.surface === "Printed_Label") {
+        this.hiddenAlbumLabels.set(mesh, mesh.visible);
+        mesh.visible = false;
+      }
+    });
+    const cover = new ViewerAlbumCover(this.album, this.renderer.capabilities.getMaxAnisotropy());
+    this.albumCover = cover;
+    // Cover coordinates share the GLB's local space. Its entire print follows
+    // the same assembly group as the physical glass, including while mid-motion.
+    coverGroup.add(cover.mesh);
+    applyTextureQuality(cover.mesh, this.renderer, this.quality);
+    void cover.ready.then(() => {
+      if (this.albumCover === cover && this.isOpen && !this.closing) this.update(this.lastTime);
+    });
+  }
+
   open(
     id: string,
     title: string,
@@ -183,9 +244,9 @@ export class ModelViewer {
     this.siblings.forEach(({ node }) => (node.inert = true));
     this.root.hidden = false;
     this.root.dataset.transition = "opening";
-    this.root.querySelector("#viewer-title")!.textContent = title;
-    this.root.querySelector("#viewer-file")!.textContent =
-      "FILE " + id + " / INTERNAL DATABASE";
+    this.openedId = id;
+    this.openedTitle = title;
+    this.updateHeading();
     this.spread = { value: 0, velocity: 0 };
     this.targetSpread = 0;
     this.clarity = { value: 1, velocity: 0 };
@@ -228,6 +289,8 @@ export class ModelViewer {
       for (const group of this.groups.values()) source.model.add(group);
       source.model.position.set(0, -1.85, 0);
       this.scene.add(source.model);
+      if (this.theme) this.themeAppearance.applyModel(source.model);
+      this.attachAlbumCover();
       applyTextureQuality(source.model, this.renderer, this.quality);
       this.loading = false;
       loading.hidden = true;
@@ -350,6 +413,10 @@ export class ModelViewer {
     this.root.hidden = true;
     this.transitions.forEach((animation) => animation.cancel());
     this.transitions = [];
+    // Remove the viewer-owned print before the provider disposes the assembly.
+    this.albumCover?.dispose();
+    this.albumCover = undefined;
+    this.hiddenAlbumLabels.clear();
     if (this.source) {
       this.scene.remove(this.source.model);
       this.source.dispose();
@@ -570,10 +637,12 @@ export class ModelViewer {
     const objectDistance = this.camera.position.length();
     fog.near = Math.max(0, objectDistance - 1);
     fog.far = objectDistance + 12;
+    if (this.theme) this.themeAppearance.update(this.camera);
     if (this.quality.antialias === "smaa") this.pipeline.composer.render();
     else this.renderer.render(this.scene, this.camera);
     this.root.dataset.stats = JSON.stringify({
       ready: Boolean(this.source),
+      theme: this.theme ?? "baseline",
       clarity: this.clarity.value,
       targetClarity: this.targetClarity,
       spread: this.spread.value,
@@ -593,6 +662,14 @@ export class ModelViewer {
         z: group.position.z,
         meshes: group.children.length,
       })),
+      albumCover: this.albumCover ? {
+        albumId: this.albumCover.album.id,
+        part: this.albumCover.mesh.parent?.name,
+        localZ: this.albumCover.mesh.position.z,
+        partZ: this.albumCover.mesh.parent?.position.z,
+        status: this.albumCover.mesh.userData.coverStatus,
+        imageSize: this.albumCover.mesh.userData.coverImageSize,
+      } : null,
     });
   }
 }

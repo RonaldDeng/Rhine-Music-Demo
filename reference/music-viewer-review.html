@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="zh-CN"><meta charset="utf-8"><title>专辑实体拆解检查</title>
+<style>body{margin:0}#stage{position:relative!important;width:100vw!important;height:100vh!important;left:0!important;top:0!important;transform:none!important}.provider-host{position:fixed;left:-5000px;top:0;width:1600px;height:900px}#open-review{position:fixed;left:24px;top:24px;padding:12px}button[data-review]{padding:8px 14px!important;background:#fff!important;color:#333!important;border:1px solid #777!important}</style>
+<div class="provider-host"></div><div id="stage"><button id="open-review">打开实体专辑检查</button></div>
+<script type="module">
+import '/src/style.css';
+import { ArchiveScene } from '/src/scene.ts';
+import { ModelViewer } from '/src/model-viewer.ts';
+import { setMusicAlbums } from '/src/data.ts';
+const specs = [[700,700,'#567777','方形封面'],[420,700,'#d99751','竖幅封面'],[1000,420,'#9c7899','横幅封面']];
+const albums=specs.map(([w,h,color,title],i)=>({id:`viewer-fixture-${i}`,title,artist:'实体专辑检查',genreId:'test',rawGenres:[],folder:'',tracks:[],producers:[],offline:false,coverUrl:'data:image/svg+xml;charset=utf-8,'+encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}"><rect width="100%" height="100%" fill="${color}"/><rect x="12" y="12" width="${w-24}" height="${h-24}" fill="none" stroke="white" stroke-width="12"/><circle cx="${w/2}" cy="${h/2}" r="${Math.min(w,h)*.25}" fill="none" stroke="white" stroke-width="12"/><text x="50%" y="88%" text-anchor="middle" fill="white" font-size="32">${title}</text><text x="5%" y="12%" fill="white" font-size="30">TL</text><text x="94%" y="12%" text-anchor="end" fill="white" font-size="30">TR</text><text x="5%" y="95%" fill="white" font-size="30">BL</text><text x="94%" y="95%" text-anchor="end" fill="white" font-size="30">BR</text></svg>`)}));
+albums.push({...albums[0],id:'viewer-fixture-missing',title:'无封面专辑',coverUrl:undefined});
+setMusicAlbums(albums,[{id:'test',name:'拆解检查'}]);
+const providerScene = new ArchiveScene(document.querySelector('.provider-host'));
+await providerScene.load();
+const viewer=new ModelViewer(document.querySelector('#stage'),()=>{});
+let index=0;
+const swap=document.createElement('button'); swap.dataset.review='next'; swap.textContent='测试：下一种封面';
+swap.addEventListener('click',()=>{index=(index+1)%albums.length;viewer.setAlbum(albums[index]);});
+viewer.root.querySelector('.viewer-actions').appendChild(swap);
+function open(){viewer.setAlbum(albums[index]);viewer.open(albums[index].id,albums[index].title,()=>providerScene.createAssemblyModel(),false);}
+document.querySelector('#open-review').addEventListener('click',open);
+addEventListener('resize',()=>viewer.resize());
+requestAnimationFrame(function update(t){viewer.update(t/1000);requestAnimationFrame(update);});
+open();
+</script></html>
