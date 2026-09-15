@@ -1,3 +1,4 @@
+import "@kitlangton/rolling-number/styles.css";
 import "./style.css";
 import "./quality-settings.css";
 import "./document-decryption.css";
@@ -34,6 +35,7 @@ import type {
 import { demoAlbums, demoGenres } from "./demo-library";
 import { escapeHtml as esc } from "./html";
 import { albumTitleMarkup, setupMusicTitleLayout } from "./music-title";
+import { setupMusicTextMotion } from "./music-text-motion";
 
 type Theme = "day" | "night";
 type Panel = "library" | "search" | "settings" | null;
@@ -169,7 +171,7 @@ stage.innerHTML = `
   <div id="library-status" class="library-status"><i></i><span>正在读取本地音乐索引</span></div>
   <section id="music-browse" class="music-browse" aria-label="专辑浏览">
     <div class="album-callout"><p class="music-eyebrow">MUSIC ARCHIVE <span>／</span> <span id="selection-genre"></span></p>
-      <div class="selection-rule"><span id="selection-code">ALBUM 001</span><span id="selection-format"></span></div>
+      <div class="selection-rule"><span id="selection-code">ALBUM <span id="selection-code-number">001</span></span><span id="selection-format"></span></div>
       <h1 id="selection-title"></h1><p id="selection-artist" class="selection-artist"></p>
       <div class="selection-meta" id="selection-meta"></div>
       <button class="open-album" data-action="open">打开专辑 <span>↗</span></button>
@@ -177,7 +179,7 @@ stage.innerHTML = `
     <div class="music-navigation">
       <div class="music-counter"><span class="music-eyebrow">ALBUM / SELECT</span><div><b id="selection-number">01</b><span>/ <i id="selection-total">00</i></span></div></div>
       <div class="album-stepper"><button data-action="prev" aria-label="上一个专辑">↑</button><div id="album-ticks"></div><button data-action="next" aria-label="下一个专辑">↓</button></div>
-      <div class="genre-stepper"><button data-action="genre-prev" aria-label="上一个流派">←</button><div><small id="genre-position"></small><button data-action="genres" id="genre-name"></button></div><button data-action="genre-next" aria-label="下一个流派">→</button></div>
+      <div class="genre-stepper"><button data-action="genre-prev" aria-label="上一个流派">←</button><div><small id="genre-position">GENRE <span id="genre-index">01</span> / <span id="genre-total">00</span></small><button data-action="genres" id="genre-name"></button></div><button data-action="genre-next" aria-label="下一个流派">→</button></div>
     </div>
     <div class="music-keyhint">← → 流派 <span>／</span> ↑ ↓ 专辑 <span>／</span> ENTER 打开专辑</div>
   </section>
@@ -191,7 +193,20 @@ stage.innerHTML = `
   <div id="music-panel-root"></div><div id="music-toast" role="status" aria-live="polite"></div>
   <div id="music-loading"><span class="loading-orbit"></span><strong>OPENING THE ARCHIVE</strong><small>正在载入三维专辑架</small></div>
 `;
-setupMusicTitleLayout(stage);
+const titleMotion = setupMusicTitleLayout(stage);
+const textMotion = setupMusicTextMotion(stage);
+let selectionInitialized = false;
+const selectionMotionEnabled = () =>
+  ready && mode === "archive" && !boot?.active && !preferences.reduced;
+function syncSelectionMotion() {
+  const enabled = selectionMotionEnabled();
+  textMotion.setEnabled(enabled);
+  if (!enabled) titleMotion.finish();
+  else {
+    const album = currentAlbum();
+    if (album) titleMotion.update(album.title, true);
+  }
+}
 
 function notify(message: string) {
   $("#music-toast").textContent = message;
@@ -420,33 +435,48 @@ function updateStatus() {
     ? "DEMONSTRATION"
     : `${n} ALBUMS / ${tracks} TRACKS`;
 }
-function updateSelection() {
+function updateSelection(navigation?: ArchiveNavigation) {
   const a = currentAlbum();
-  if (!a) return;
+  if (!a) {
+    selectionInitialized = false;
+    textMotion.finish();
+    titleMotion.finish();
+    return;
+  }
   const location = fileLocation(selected),
     files = columnFiles(location.lane),
     idx = files.indexOf(selected);
-  $("#selection-genre").textContent = genreName(a.genreId);
-  $("#selection-code").textContent =
-    `ALBUM ${String(selected + 1).padStart(3, "0")}`;
-  $("#selection-format").textContent = demo
-    ? "DEMO"
-    : [...new Set(a.tracks.map((t) => t.format))].join(" / ");
-  $("#selection-title").innerHTML = albumTitleMarkup(a.title);
+  const animated = selectionInitialized && selectionMotionEnabled();
+  selectionInitialized = true;
+  textMotion.update(
+    {
+      number: idx + 1,
+      code: selected + 1,
+      genreIndex: location.lane + 1,
+      genre: genreName(a.genreId),
+      genreName: archiveColumns[location.lane],
+      format: demo
+        ? "DEMO"
+        : [...new Set(a.tracks.map((t) => t.format))].join(" / "),
+      artist: a.artist,
+      meta: [
+        a.year ? String(a.year) : "年份未提供",
+        demo ? "演示封面" : `${a.tracks.length} 首曲目`,
+        a.tracks.length ? time(albumDuration(a)) : "",
+      ]
+        .filter(Boolean)
+        .join("  /  "),
+    },
+    animated,
+    navigation,
+  );
+  titleMotion.update(a.title, animated);
   $("#selection-title").title = a.title;
-  $("#selection-artist").textContent = a.artist;
-  $("#selection-meta").textContent = [
-    a.year ? String(a.year) : "年份未提供",
-    demo ? "演示封面" : `${a.tracks.length} 首曲目`,
-    a.tracks.length ? time(albumDuration(a)) : "",
-  ]
-    .filter(Boolean)
-    .join("  /  ");
-  $("#selection-number").textContent = String(idx + 1).padStart(2, "0");
   $("#selection-total").textContent = String(files.length).padStart(2, "0");
-  $("#genre-position").textContent =
-    `GENRE ${String(location.lane + 1).padStart(2, "0")} / ${String(archiveColumns.length).padStart(2, "0")}`;
-  $("#genre-name").textContent = archiveColumns[location.lane];
+  $("#genre-total").textContent = String(archiveColumns.length).padStart(
+    2,
+    "0",
+  );
   const begin = Math.max(0, Math.min(idx - 5, files.length - 12));
   $("#album-ticks").innerHTML = files
     .slice(begin, begin + 12)
@@ -457,6 +487,8 @@ function updateSelection() {
     .join("");
   $("#detail-card-id").textContent =
     `ALBUM / ${String(selected + 1).padStart(3, "0")}`;
+  // Initial data is shown immediately; warm its reels once it is interactive.
+  if (!animated && selectionMotionEnabled()) syncSelectionMotion();
 }
 function select(index: number, navigation?: ArchiveNavigation) {
   if (!records.length || !ready) return;
@@ -467,7 +499,7 @@ function select(index: number, navigation?: ArchiveNavigation) {
     records[selected].id,
   );
   scene?.select(selected, navigation);
-  updateSelection();
+  updateSelection(navigation);
   effects.play(
     navigation && "axis" in navigation && navigation.axis === "lane"
       ? "column"
@@ -501,6 +533,7 @@ function setMode(next: "archive" | "detail") {
   mode = next;
   stage.dataset.mode = next;
   $("#music-browse").hidden = mode !== "archive" || !albums.length;
+  syncSelectionMotion();
   scene?.setMode(next);
   effects.setScene(next);
   effects.play(next === "detail" ? "open" : "back");
@@ -1179,6 +1212,7 @@ document.addEventListener("change", (e) => {
   }
   if (el.id === "reduced-motion") {
     preferences.reduced = el.checked;
+    syncSelectionMotion();
     scene?.setReduced(el.checked);
     stage.classList.toggle("reduce-motion", el.checked);
     savePrefs();
@@ -1307,8 +1341,12 @@ function frame(ms: number) {
       // attributes, without adding controls or per-frame DOM work.
       if (!viewer?.isOpen) {
         const { drawCalls, triangles, selectionLight } = scene.getStats();
-        $("#three-scene").dataset.renderStats = JSON.stringify({ drawCalls, triangles });
-        $("#three-scene").dataset.selectionLight = JSON.stringify(selectionLight);
+        $("#three-scene").dataset.renderStats = JSON.stringify({
+          drawCalls,
+          triangles,
+        });
+        $("#three-scene").dataset.selectionLight =
+          JSON.stringify(selectionLight);
       }
       frameCount = 0;
       lastFrame = ms;
@@ -1330,7 +1368,8 @@ async function start() {
     fit();
     scene = new ArchiveScene($("#three-scene"));
     // Keep a direct visual comparison URL without adding another user setting.
-    if (new URLSearchParams(location.search).get("lighting") !== "baseline") scene.enableSelectionLighting();
+    if (new URLSearchParams(location.search).get("lighting") !== "baseline")
+      scene.enableSelectionLighting();
     await Promise.all([
       scene.load(),
       document.fonts.load("400 20px MiSans"),
@@ -1357,9 +1396,11 @@ async function start() {
     };
     $("#music-loading").remove();
     updateSelection();
+    syncSelectionMotion();
     boot = new MusicBoot(stage, {
       onStart: () => {
         if (mode === "detail") setMode("archive");
+        syncSelectionMotion();
         scene!.setMode("hidden");
         effects.setScene("boot");
         effects.restartBoot();
@@ -1368,6 +1409,7 @@ async function start() {
         scene!.setMode("archive");
         effects.setScene("archive");
         if (reason === "complete" && albums.length) setMode("detail");
+        syncSelectionMotion();
       },
       reduced: () => preferences.reduced,
       album: () => currentAlbum(),

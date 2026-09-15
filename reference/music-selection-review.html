@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="zh-CN">
+  <meta charset="utf-8" /><title>真实音乐库文字过渡验收</title>
+  <style>
+    body {
+      margin: 0;
+      background: #e8e5e1;
+      font: 12px/1.6 monospace;
+    }
+    iframe {
+      display: block;
+      width: 100%;
+      height: 650px;
+      border: 0;
+    }
+    pre {
+      white-space: pre-wrap;
+      margin: 16px;
+    }
+  </style>
+  <iframe src="/?scene=archive" title="真实音乐库"></iframe>
+  <pre id="result">检查中…</pre>
+  <script type="module">
+    const frame = document.querySelector("iframe"),
+      result = document.querySelector("#result");
+    const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+    const check = (condition, message) => {
+      if (!condition) throw new Error(message);
+      result.textContent += `\nPASS ${message}`;
+    };
+    async function until(fn, timeout = 15000) {
+      const begin = performance.now();
+      while (!fn()) {
+        if (performance.now() - begin > timeout)
+          throw new Error("等待状态超时");
+        await pause(20);
+      }
+    }
+    const moving = (el) =>
+      el
+        ?.getAnimations({ subtree: true })
+        .some((animation) => animation.playState === "running");
+    try {
+      await until(
+        () =>
+          frame.contentDocument.querySelector(
+            "#selection-title .rn-root[data-rn-ready]",
+          ) && !frame.contentDocument.querySelector("#music-loading"),
+      );
+      const doc = frame.contentDocument,
+        win = frame.contentWindow;
+      await win.document.fonts.ready;
+      await pause(300);
+      const title = doc.querySelector("#selection-title"),
+        number = doc.querySelector("#selection-number");
+      const next = doc.querySelector('[data-action="next"]');
+      next.click();
+      await until(() => moving(title) && moving(number), 2500);
+      check(
+        title.getAttribute("aria-label") === win.rhineMusic.selectedAlbum.title,
+        "真实音乐库首切：专辑名称与序号都有动画，目标匹配选中专辑",
+      );
+      check(
+        [...number.querySelectorAll(".rn-reel")].some(moving),
+        "实际数字逐位上下滚动",
+      );
+      await pause(90);
+      next.click();
+      await pause(80);
+      next.click();
+      await pause(800);
+      check(!moving(title) && !moving(number), "快速连切落定，没有悬挂动画");
+      check(
+        title.getAttribute("aria-label") === win.rhineMusic.selectedAlbum.title,
+        "快速切换后的名称仍对应当前封面",
+      );
+      const label = title.getAttribute("aria-label");
+      check(
+        doc.querySelector(".open-album").getBoundingClientRect().bottom <
+          doc.querySelector(".music-navigation").getBoundingClientRect().top,
+        "长专辑名称未侵入底部导航",
+      );
+      doc.querySelector('[data-action="open"]').click();
+      await until(
+        () =>
+          doc.querySelector("#stage").dataset.mode === "detail" &&
+          !doc.querySelector("#album-detail-content").inert &&
+          Number(
+            win.getComputedStyle(doc.querySelector("#album-detail-content"))
+              .opacity,
+          ) > 0.9,
+      );
+      check(!moving(title) && !moving(number), "进入详情结束专辑架文字滚动");
+      doc.querySelector("#tab-about").click();
+      const content = doc.querySelector("#album-tab-content"),
+        indicator = doc.querySelector(".music-tab-indicator");
+      check(
+        content
+          .getAnimations()
+          .some((a) => a.effect.getTiming().duration === 150),
+        "02 专辑介绍沿用原版150ms正文淡入",
+      );
+      check(
+        indicator
+          .getAnimations()
+          .some((a) => a.effect.getTiming().duration === 180),
+        "01/02 下划线沿用原版180ms位移",
+      );
+      await pause(60);
+      doc.querySelector("#tab-tracks").click();
+      await pause(250);
+      check(
+        doc.querySelector("#tab-tracks").getAttribute("aria-selected") ===
+          "true" && !!content.querySelector(".track-list"),
+        "快速切回01显示正确歌单",
+      );
+      doc.querySelector('[data-action="back"]').click();
+      await pause(300);
+      next.click();
+      await until(() => moving(title) && moving(number), 2500);
+      check(true, "详情返回后的第一次切换继续播放滚动");
+      await pause(800);
+      result.textContent += "\nALL PASSED";
+    } catch (error) {
+      result.textContent += `\nFAIL ${error.stack}`;
+    }
+  </script>
+</html>

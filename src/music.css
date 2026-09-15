@@ -234,7 +234,7 @@
   top: 33%;
   z-index: 3;
   max-width: 520px;
-  text-shadow: 0 1px 14px var(--surface);
+  text-shadow: none;
 }
 .music-eyebrow {
   margin: 0;
@@ -256,14 +256,14 @@
   padding: 15px 0 12px;
   margin: 0 0 17px;
 }
-.selection-rule span:last-child {
+.selection-rule > span:last-child {
   color: var(--muted);
   font-size: 9px;
 }
 .album-callout h1 {
   font-size: clamp(27px, 2.7vw, 44px);
   line-height: 1.2;
-  font-weight: 600;
+  font-weight: 700;
   margin: 0 0 10px;
   letter-spacing: -0.8px;
   overflow-wrap: anywhere;
@@ -271,11 +271,13 @@
 }
 .selection-artist {
   font-size: 15px;
+  font-weight: 600;
   line-height: 1.6;
   margin: 0 0 21px;
 }
 .selection-meta {
   font-size: 10px;
+  font-weight: 500;
   color: var(--muted);
   letter-spacing: 0.5px;
 }
@@ -319,7 +321,7 @@
   font-weight: 300;
   letter-spacing: -3px;
 }
-.music-counter div > span {
+.music-counter > div > span {
   font-size: 12px;
   font-weight: 300;
   color: var(--muted);
@@ -1491,7 +1493,7 @@
     font-size: 6px;
     letter-spacing: 1px;
   }
-  .music-counter div > span {
+  .music-counter > div > span {
     font-size: 9px;
   }
   .music-counter i {
@@ -1941,7 +1943,7 @@
     );
 }
 .music-app[data-theme="night"] .album-callout {
-  text-shadow: 0 1px 12px #07111f;
+  text-shadow: none;
 }
 .music-app[data-theme="night"] .library-status {
   color: var(--ink);
@@ -2004,14 +2006,17 @@
   font-size: 0.45em;
   line-height: 1.45;
   letter-spacing: 0.01em;
-  font-weight: 400;
+  font-weight: 600;
   color: var(--muted);
 }
 .album-callout h1[data-title-overflow] {
   overflow: hidden;
 }
-.album-callout h1[data-title-overflow] .music-title-main,
-.album-callout h1[data-title-overflow] .music-title-translation {
+.album-callout h1[data-title-overflow] .music-title-layout .music-title-main,
+.album-callout
+  h1[data-title-overflow]
+  .music-title-layout
+  .music-title-translation {
   display: -webkit-box;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
@@ -2141,4 +2146,36 @@
   display: block;
   margin-top: 3px;
   font-size: 10px;
+}
+
+/* Original 460 ms reels; keep native multiline measurements outside their DOM. */
+.music-rolling-text,
+.music-rolling-number {
+  --rn-blur: 0;
+  --rn-edge-fade: 0.08em;
+}
+#selection-title {
+  position: relative;
+}
+.music-title-layout {
+  display: block;
+  visibility: hidden;
+  pointer-events: none;
+}
+.music-title-layout > [hidden] {
+  display: none;
+}
+.music-title-rolling {
+  position: absolute;
+  inset: 0;
+  overflow: clip;
+  overflow-clip-margin: 0.08em;
+  pointer-events: none;
+}
+.music-title-reel.rn-root {
+  position: absolute;
+  left: 0;
+}
+.music-title-reel-translation {
+  color: var(--muted);
 }

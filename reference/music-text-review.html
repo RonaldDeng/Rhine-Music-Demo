@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="zh-CN">
+  <meta charset="utf-8" />
+  <title>音乐文字滚动验收</title>
+  <style>
+    body {
+      margin: 0;
+      background: #e8e5e1;
+    }
+    #fixture {
+      position: relative;
+      height: 650px;
+      width: min(100%, 1100px);
+      margin: auto;
+    }
+    #fixture .album-callout {
+      left: 48%;
+      top: 90px;
+    }
+    #fixture .music-navigation {
+      bottom: 24px;
+    }
+    #results {
+      position: relative;
+      margin: 0 auto;
+      max-width: 1000px;
+      white-space: pre-wrap;
+      font: 12px/1.6 monospace;
+    }
+    #rerun {
+      position: absolute;
+      top: 20px;
+      left: 30px;
+    }
+  </style>
+  <div id="fixture" class="music-app" data-mode="archive">
+    <button id="rerun">重新验证</button>
+    <div class="album-callout">
+      <p class="music-eyebrow">
+        MUSIC ARCHIVE <span>／</span><span id="selection-genre"></span>
+      </p>
+      <div class="selection-rule">
+        <span>ALBUM <span id="selection-code-number"></span></span
+        ><span id="selection-format"></span>
+      </div>
+      <h1 id="selection-title"></h1>
+      <p id="selection-artist" class="selection-artist"></p>
+      <div id="selection-meta" class="selection-meta"></div>
+      <button class="open-album">打开专辑 <span>↗</span></button>
+    </div>
+    <div class="music-navigation">
+      <div class="music-counter">
+        <span class="music-eyebrow">ALBUM / SELECT</span>
+        <div>
+          <b id="selection-number"></b><span>/ <i>12</i></span>
+        </div>
+      </div>
+      <div></div>
+      <div class="genre-stepper">
+        <div>
+          <small>GENRE <span id="genre-index"></span> / 07</small
+          ><button id="genre-name"></button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <pre id="results">准备检查…</pre>
+  <script type="module">
+    import "/src/style.css";
+    import "@kitlangton/rolling-number/styles.css";
+    import "/src/music.css";
+    import { setupMusicTitleLayout } from "/src/music-title.ts";
+    import { setupMusicTextMotion } from "/src/music-text-motion.ts";
+    const root = document.querySelector("#fixture"),
+      report = document.querySelector("#results");
+    const title = document.querySelector("#selection-title");
+    const heading = setupMusicTitleLayout(root),
+      text = setupMusicTextMotion(root);
+    const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+    const frame = () =>
+      new Promise((resolve) => requestAnimationFrame(resolve));
+    const moving = (el) =>
+      el
+        .getAnimations({ subtree: true })
+        .some((a) => a.playState === "running");
+    const value = (id) =>
+      document.querySelector(`#${id} .rn-value`)?.textContent;
+    let state = {
+      number: 1,
+      code: 1,
+      genreIndex: 1,
+      genre: "流行",
+      genreName: "流行",
+      format: "FLAC",
+      artist: "陈奕迅",
+      meta: "2001 / 10 首曲目 / 42:20",
+    };
+    const check = (ok, message) => {
+      if (!ok) throw new Error(message);
+      report.textContent += `PASS ${message}\n`;
+    };
+    async function until(fn) {
+      const start = performance.now();
+      while (!fn()) {
+        if (performance.now() - start > 3000) throw new Error("等待滚动超时");
+        await pause(16);
+      }
+    }
+    async function run() {
+      report.textContent = "";
+      await document.fonts.ready;
+      heading.update("一滴眼泪", false);
+      text.update(state, false);
+      heading.finish();
+      text.finish();
+      await pause(100);
+      check(!moving(root), "首次载入直接显示，无入场乱滚");
+      heading.update("一滴眼泪", true);
+      text.setEnabled(true);
+      await pause(100);
+      heading.update("The Easy Ride", true);
+      text.update({ ...state, number: 2, code: 2 }, true, {
+        axis: "row",
+        direction: 1,
+      });
+      await until(
+        () =>
+          moving(title) && moving(document.querySelector("#selection-number")),
+      );
+      check(
+        title.getAttribute("aria-label") === "The Easy Ride" &&
+          value("selection-number") === "02",
+        "第一次切换标题与独立数字同时滚动",
+      );
+      const movingReel = [
+        ...document.querySelectorAll("#selection-number .rn-reel"),
+      ].find(moving);
+      check(
+        !!movingReel && moving(movingReel),
+        "变化数字使用竖直字轮，而非整块淡入",
+      );
+      const numberFace = document.querySelector("#selection-number .rn-face");
+      check(
+        getComputedStyle(numberFace).fontSize ===
+          getComputedStyle(document.querySelector("#selection-number"))
+            .fontSize,
+        "数字字槽未被辅助小字样式缩小",
+      );
+      heading.update("准备中", true);
+      await pause(70);
+      heading.update("陈奕迅48首选(48 Selected Songs of Eason Chan)", true);
+      text.update(
+        {
+          ...state,
+          number: 1,
+          code: 26,
+          genreIndex: 2,
+          genre: "国语流行",
+          genreName: "国语流行",
+        },
+        true,
+        { axis: "row", direction: 1 },
+      );
+      await pause(750);
+      check(
+        !moving(root) && value("selection-number") === "01",
+        "连续输入与首尾循环停在最新目标",
+      );
+      check(
+        title.getAttribute("aria-label") ===
+          "陈奕迅48首选(48 Selected Songs of Eason Chan)",
+        "中英文专辑全名保留",
+      );
+      check(
+        [...title.querySelectorAll(".music-title-reel-main .rn-face")]
+          .map((n) => n.textContent)
+          .join("") === "陈奕迅48首选",
+        "主标题没有旧字残留",
+      );
+      const names = [
+        "The Very Best Collection of Selected Songs from the Early Years and Live Concerts",
+        "陈奕迅48首选(48 Selected Songs of Eason Chan)",
+        "精选(An Extended English Album Subtitle with Several More Words to Verify Every Wrapped Line Remains Visible)",
+        "这是一张特别长的中文专辑标题用于检查换行缩放并且不应侵入其他按钮",
+      ];
+      for (const width of [1100, 730, 390]) {
+        root.style.width = `${width}px`;
+        for (const name of names) {
+          heading.update(name, false);
+          heading.finish();
+          await pause(80);
+          const titleBox = title.getBoundingClientRect(),
+            navBox = root
+              .querySelector(".music-navigation")
+              .getBoundingClientRect(),
+            openBox = root.querySelector(".open-album").getBoundingClientRect();
+          check(
+            titleBox.bottom <= openBox.top && openBox.bottom < navBox.top,
+            `${width}px 标题/按钮/导航没有相互侵入：${name.slice(0, 8)}`,
+          );
+          const layout = title.querySelector(".music-title-layout");
+          check(
+            layout.getBoundingClientRect().width <= titleBox.width + 1,
+            `${width}px 原生换行保留宽度边界`,
+          );
+          if (!title.hasAttribute("data-title-overflow")) {
+            const painted = [...title.querySelectorAll(".rn-value")]
+              .map((el) => el.textContent)
+              .join("")
+              .replace(/\s/g, "");
+            const expected = layout.textContent.replace(/\s/g, "");
+            check(
+              painted === expected,
+              `${width}px 所有可见主副标题行完整显示`,
+            );
+          }
+        }
+      }
+      const longArtist =
+        "陈奕迅 / 王菲 / 张学友 / 林忆莲 / The Very Long Collaborative Orchestra and Guest Artists";
+      text.update({ ...state, artist: longArtist }, false);
+      await pause(100);
+      const artist = document.querySelector("#selection-artist");
+      check(
+        getComputedStyle(artist.querySelector(".music-inline-plain"))
+          .display !== "none" &&
+          artist.querySelector(".music-inline-plain").textContent ===
+            longArtist,
+        "长艺人名单保留完整原生换行",
+      );
+      check(
+        artist.getBoundingClientRect().right <=
+          root.querySelector(".album-callout").getBoundingClientRect().right +
+            1,
+        "长辅助信息不侵入右边界",
+      );
+      text.update(state, false);
+      await pause(100);
+      root.style.width = "min(100%, 1100px)";
+      heading.update("一滴眼泪", true);
+      text.update({ ...state, number: 7 }, true);
+      await frame();
+      await frame();
+      heading.finish();
+      text.finish();
+      check(!moving(root), "减少动态或进入详情会立即结束文字滚动");
+      heading.update("一滴眼泪", true);
+      text.setEnabled(true);
+      await pause(100);
+      heading.update("The Easy Ride", true);
+      text.update({ ...state, number: 8 }, true);
+      await until(() => moving(title));
+      check(true, "返回专辑架后第一次切换仍会滚动");
+      await pause(750);
+      heading.update("The Easy Ride", true);
+      text.update({ ...state, number: 8 }, true);
+      await pause(40);
+      check(!moving(root), "相同内容与索引刷新不重复播放");
+      report.textContent += "\nALL PASSED";
+    }
+    document.querySelector("#rerun").onclick = () =>
+      run().catch((e) => (report.textContent += `\nFAIL ${e.stack}`));
+    run().catch((e) => (report.textContent += `\nFAIL ${e.stack}`));
+  </script>
+</html>
