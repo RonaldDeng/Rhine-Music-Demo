@@ -54,8 +54,32 @@
       const title = doc.querySelector("#selection-title"),
         number = doc.querySelector("#selection-number");
       const next = doc.querySelector('[data-action="next"]');
+      const tickHost = doc.querySelector("#album-ticks");
+      const tickNodes = [...tickHost.children];
+      const previousTick = tickHost.querySelector(".active");
       next.click();
       await until(() => moving(title) && moving(number), 2500);
+      const currentTick = tickHost.querySelector(".active");
+      const tickHeight = (element) =>
+        Number.parseFloat(win.getComputedStyle(element, "::before").height);
+      check(
+        tickNodes.every((node, i) => node === tickHost.children[i]),
+        "切换专辑保留原刻度节点",
+      );
+      check(
+        previousTick !== currentTick &&
+          tickHeight(previousTick) > 10 &&
+          tickHeight(previousTick) < 30 &&
+          tickHeight(currentTick) > 10 &&
+          tickHeight(currentTick) < 30,
+        "新旧刻度连续伸长/缩短，不是瞬间替换",
+      );
+      check(
+        currentTick
+          .getAnimations({ subtree: true })
+          .some((a) => a.effect.getTiming().duration === 400),
+        "刻度恢复原版400ms伸缩过渡",
+      );
       check(
         title.getAttribute("aria-label") === win.rhineMusic.selectedAlbum.title,
         "真实音乐库首切：专辑名称与序号都有动画，目标匹配选中专辑",
@@ -74,13 +98,30 @@
         title.getAttribute("aria-label") === win.rhineMusic.selectedAlbum.title,
         "快速切换后的名称仍对应当前封面",
       );
-      const label = title.getAttribute("aria-label");
       check(
         doc.querySelector(".open-album").getBoundingClientRect().bottom <
           doc.querySelector(".music-navigation").getBoundingClientRect().top,
         "长专辑名称未侵入底部导航",
       );
+      const browse = doc.querySelector("#music-browse"),
+        detail = doc.querySelector("#music-detail");
+      const opacity = (element) =>
+        element.hidden ? 0 : Number(win.getComputedStyle(element).opacity);
+      async function noOverlap(duration, label) {
+        const start = performance.now();
+        let overlap = false,
+          frames = 0;
+        while (performance.now() - start < duration) {
+          const body = doc.querySelector("#album-detail-content");
+          if (opacity(browse) > 0.02 && opacity(detail) * opacity(body) > 0.02)
+            overlap = true;
+          frames++;
+          await new Promise((resolve) => win.requestAnimationFrame(resolve));
+        }
+        check(!overlap && frames > 2, label);
+      }
       doc.querySelector('[data-action="open"]').click();
+      await noOverlap(700, "进入详情时两组文字不重叠");
       await until(
         () =>
           doc.querySelector("#stage").dataset.mode === "detail" &&
@@ -115,11 +156,54 @@
         "快速切回01显示正确歌单",
       );
       doc.querySelector('[data-action="back"]').click();
-      await pause(300);
+      check(
+        detail.inert && detail.getAttribute("aria-hidden") === "true",
+        "退出中的详情立即停止接收输入",
+      );
+      await noOverlap(700, "返回选择页：详情先退出，选择文字再淡入");
       next.click();
       await until(() => moving(title) && moving(number), 2500);
       check(true, "详情返回后的第一次切换继续播放滚动");
       await pause(800);
+      const key = (name) =>
+        doc.body.dispatchEvent(
+          new win.KeyboardEvent("keydown", { key: name, bubbles: true }),
+        );
+      key("Enter");
+      await pause(60);
+      key("Escape");
+      await pause(50);
+      key("Enter");
+      await noOverlap(700, "快速进入/返回/重进支持反向且没有文字重叠");
+      await until(
+        () =>
+          doc.querySelector("#stage").dataset.mode === "detail" &&
+          opacity(detail) > 0.95,
+      );
+      key("Escape");
+      await pause(60);
+      key("Enter");
+      await pause(50);
+      key("Escape");
+      await noOverlap(700, "详情淡出中反向再返回仍没有残留文字");
+      check(
+        browse.hidden === false &&
+          detail.hidden === true &&
+          !browse.inert &&
+          detail.inert,
+        "最终只显示可操作的选择页",
+      );
+      doc.querySelector('[data-action="genre-next"]').click();
+      await pause(500);
+      check(
+        tickNodes.every((node, i) => node === tickHost.children[i]),
+        "跨流派仍复用整组刻度",
+      );
+      check(
+        tickHost.querySelectorAll(".active").length === 1 &&
+          !tickHost.querySelector(".active").hidden,
+        "跨流派后的选中刻度唯一且可见",
+      );
       result.textContent += "\nALL PASSED";
     } catch (error) {
       result.textContent += `\nFAIL ${error.stack}`;

@@ -346,29 +346,56 @@
   color: var(--accent);
 }
 #album-ticks {
+  --tick-height: 30px;
+  --tick-rest: 10px;
+  --tick-hover: 22px;
+  --tick-width: 3px;
   display: flex;
   align-items: center;
   gap: 8px;
-  height: 30px;
+  height: var(--tick-height);
 }
 #album-ticks button {
-  width: 3px;
-  height: 10px;
+  width: var(--tick-width);
+  height: var(--tick-height);
+  padding: 0;
+  flex: none;
+  background: transparent;
+  position: relative;
+}
+#album-ticks button::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: calc((var(--tick-height) - var(--tick-rest)) / 2);
+  width: 100%;
+  height: var(--tick-rest);
   background: var(--ink);
   opacity: 0.25;
-  position: relative;
   transition:
-    height 0.35s ease,
-    opacity 0.35s ease;
+    height 0.4s,
+    top 0.4s,
+    background 0.4s,
+    opacity 0.4s;
 }
 #album-ticks button::after {
   content: "";
   position: absolute;
   inset: -7px -4px;
 }
-#album-ticks button.active {
-  height: 30px;
+#album-ticks button.active::before {
+  height: var(--tick-height);
+  top: 0;
   opacity: 1;
+}
+#album-ticks button:not(.active):is(:hover, :focus-visible)::before {
+  height: var(--tick-hover);
+  top: calc((var(--tick-height) - var(--tick-hover)) / 2);
+  background: var(--accent);
+  opacity: 1;
+}
+#album-ticks[data-reduced="true"] button::before {
+  transition: none;
 }
 .genre-stepper {
   display: flex;
@@ -1506,14 +1533,11 @@
     font-size: 21px;
   }
   #album-ticks {
+    --tick-height: 21px;
+    --tick-rest: 8px;
+    --tick-hover: 16px;
+    --tick-width: 2px;
     gap: 6px;
-  }
-  #album-ticks button {
-    width: 2px;
-    height: 8px;
-  }
-  #album-ticks button.active {
-    height: 21px;
   }
   .genre-stepper {
     gap: 10px;

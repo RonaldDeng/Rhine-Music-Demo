@@ -36,6 +36,7 @@ import { demoAlbums, demoGenres } from "./demo-library";
 import { escapeHtml as esc } from "./html";
 import { albumTitleMarkup, setupMusicTitleLayout } from "./music-title";
 import { setupMusicTextMotion } from "./music-text-motion";
+import { setupMusicTicks } from "./music-ticks";
 
 type Theme = "day" | "night";
 type Panel = "library" | "search" | "settings" | null;
@@ -195,9 +196,14 @@ stage.innerHTML = `
 `;
 const titleMotion = setupMusicTitleLayout(stage);
 const textMotion = setupMusicTextMotion(stage);
+const tickMotion = setupMusicTicks($("#album-ticks"));
 let selectionInitialized = false;
 const selectionMotionEnabled = () =>
-  ready && mode === "archive" && !boot?.active && !preferences.reduced;
+  ready &&
+  mode === "archive" &&
+  !$("#music-browse").hidden &&
+  !boot?.active &&
+  !preferences.reduced;
 function syncSelectionMotion() {
   const enabled = selectionMotionEnabled();
   textMotion.setEnabled(enabled);
@@ -267,6 +273,12 @@ const detailTransition = new SurfaceTransition(
   undefined,
   180,
   180,
+);
+const browseTransition = new SurfaceTransition(
+  $("#music-browse"),
+  undefined,
+  220,
+  140,
 );
 let detailIdentity = "",
   pendingDetailFocus = false;
@@ -374,6 +386,7 @@ async function receiveLibrary(next: MusicLibrary, force = false) {
   }
 }
 async function applyLibrary() {
+  const hadAlbums = albums.length > 0;
   const previousId = currentAlbum()?.id;
   const previousDetail = JSON.stringify(currentAlbum());
   const visualKey = (items: MusicAlbum[], groups: MusicGenre[]) =>
@@ -403,8 +416,23 @@ async function applyLibrary() {
   if (!albums.length) mode = "archive";
   stage.dataset.mode = mode;
   $("#music-empty").hidden = albums.length > 0;
-  $("#music-browse").hidden = !albums.length || mode !== "archive";
-  $("#music-detail").hidden = !albums.length || mode !== "detail";
+  // Ordinary index refreshes must not reveal a page while its peer is exiting.
+  if (!ready || !hadAlbums || !albums.length) {
+    if (albums.length && mode === "archive") browseTransition.show(true);
+    else browseTransition.hide(true);
+    if (albums.length && mode === "detail") detailTransition.show(true);
+    else detailTransition.hide(true);
+    $("#music-browse").inert = !albums.length || mode !== "archive" || !!panel;
+    $("#music-detail").inert = !albums.length || mode !== "detail" || !!panel;
+    $("#music-browse").setAttribute(
+      "aria-hidden",
+      String(!albums.length || mode !== "archive"),
+    );
+    $("#music-detail").setAttribute(
+      "aria-hidden",
+      String(!albums.length || mode !== "detail"),
+    );
+  }
   updateSelection();
   if (mode === "detail" && previousDetail !== JSON.stringify(currentAlbum()))
     renderDetail();
@@ -477,14 +505,11 @@ function updateSelection(navigation?: ArchiveNavigation) {
     2,
     "0",
   );
-  const begin = Math.max(0, Math.min(idx - 5, files.length - 12));
-  $("#album-ticks").innerHTML = files
-    .slice(begin, begin + 12)
-    .map(
-      (i) =>
-        `<button data-select="${i}" class="${i === selected ? "active" : ""}" aria-label="选择专辑 ${esc(records[i].title)}" aria-current="${i === selected}"></button>`,
-    )
-    .join("");
+  tickMotion.update(
+    files.map((index) => ({ index, title: records[index].title })),
+    selected,
+    preferences.reduced,
+  );
   $("#detail-card-id").textContent =
     `ALBUM / ${String(selected + 1).padStart(3, "0")}`;
   // Initial data is shown immediately; warm its reels once it is interactive.
@@ -532,25 +557,44 @@ function setMode(next: "archive" | "detail") {
   if ((next === "detail" && !currentAlbum()) || mode === next) return;
   mode = next;
   stage.dataset.mode = next;
-  $("#music-browse").hidden = mode !== "archive" || !albums.length;
+  const browse = $("#music-browse"),
+    detail = $("#music-detail");
+  browse.inert = next !== "archive" || !!panel;
+  detail.inert = next !== "detail" || !!panel;
+  browse.setAttribute("aria-hidden", String(next !== "archive"));
+  detail.setAttribute("aria-hidden", String(next !== "detail"));
   syncSelectionMotion();
   scene?.setMode(next);
   effects.setScene(next);
   effects.play(next === "detail" ? "open" : "back");
   if (next === "detail") {
-    detailTransition.show(preferences.reduced);
     activeTab = "tracks";
     renderDetail();
+    // Set the incoming body before revealing its surface, rather than waiting
+    // for the next Three.js frame to overwrite the previous visit's opacity.
+    const content = $("#album-detail-content");
+    const visibility = scene?.detailVisibility ?? 0;
+    content.style.opacity = String(visibility);
+    content.style.transform = `translateY(${(1 - visibility) * 16}px)`;
+    content.inert = visibility < 0.1;
     documentDecryption.reset(
       $("#album-detail-content"),
       preferences.reduced || scene?.decryptionFrame.phase === "clear",
     );
     pendingDetailFocus = true;
+    browseTransition.hide(preferences.reduced, () => {
+      if (mode === "detail") detailTransition.show(preferences.reduced);
+    });
   } else {
     pendingDetailFocus = false;
-    detailTransition.hide(preferences.reduced, () =>
-      $("[data-action=open]").focus({ preventScroll: true }),
-    );
+    tabTransition.cancel();
+    detailTransition.hide(preferences.reduced, () => {
+      if (mode !== "archive" || !albums.length) return;
+      browseTransition.show(preferences.reduced);
+      syncSelectionMotion();
+      if (!panel && !boot?.active)
+        $("[data-action=open]").focus({ preventScroll: true });
+    });
   }
 }
 function syncTabIndicator(animate = true) {
@@ -790,6 +834,8 @@ function closePanel(after?: () => void) {
       $("#three-scene"),
     ])
       node.inert = false;
+    $("#music-browse").inert = mode !== "archive";
+    $("#music-detail").inert = mode !== "detail";
     panelFocus?.focus({ preventScroll: true });
     after?.();
   });
@@ -1212,9 +1258,14 @@ document.addEventListener("change", (e) => {
   }
   if (el.id === "reduced-motion") {
     preferences.reduced = el.checked;
+    if (el.checked) {
+      browseTransition.finish();
+      detailTransition.finish();
+    }
     syncSelectionMotion();
     scene?.setReduced(el.checked);
     stage.classList.toggle("reduce-motion", el.checked);
+    updateSelection();
     savePrefs();
   }
   if (el.id === "bgm-setting") {
