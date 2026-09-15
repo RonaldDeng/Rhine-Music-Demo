@@ -2,12 +2,15 @@ import * as THREE from "three";
 import { glassRevealGLSL, frostedTransmissionGLSL, FROSTED_ROUGHNESS } from "./glass-reveal.ts";
 import { internalOpticsFragment } from "./internal-optics.ts";
 
+import type { MusicSelectionLighting } from "./music-lighting";
+
 type Surface = THREE.MeshPhysicalMaterial;
 type Palette = { high: Surface; low?: Surface };
 
 // The array and selected file share geometry. Morph their surface properties
 // on one mesh so transparent shells never overlap during a quality change.
 export class CardAppearance {
+  musicLighting?: MusicSelectionLighting;
   private palettes = new Map<string, Palette>();
   private warmth = { value: 1 };
 
@@ -56,19 +59,19 @@ export class CardAppearance {
           shader.fragmentShader = shader.fragmentShader.replace(
             "#include <transmission_pars_fragment>",
             (mesh.userData.keepFrosted
-              ? frostedTransmissionGLSL.replace("panelPixels * 0.016", "panelPixels * 0.003")
+              ? frostedTransmissionGLSL.replace("panelPixels * 0.016", "panelPixels * 0.004")
               : frostedTransmissionGLSL) + "\n" + THREE.ShaderChunk.transmission_pars_fragment.replace(
               "float lod = log2( transmissionSamplerSize.x ) * applyIorToRoughness( roughness, ior );",
               "float lod = archiveTransmissionLod(roughness, ior, transmissionSamplerSize);",
             ),
           );
-          shader.fragmentShader = shader.fragmentShader.replace(
+          if (!mesh.userData.keepFrosted) shader.fragmentShader = shader.fragmentShader.replace(
             "#include <color_fragment>",
             "#include <color_fragment>\nvec3 archiveTint = mix(mix(vec3(0.68, 0.76, 0.86), vec3(1.0), smoothstep(0.1, 1.0, vArchiveHeight)), mix(vec3(0.40, 0.30, 0.20), vec3(1.0, 0.98, 0.94), smoothstep(0.1, 1.0, vArchiveHeight)), archiveWarmth);\ndiffuseColor.rgb *= mix(archiveTint, vec3(1.0), archiveQuality);",
           );
           shader.fragmentShader = shader.fragmentShader.replace(
             "#include <roughnessmap_fragment>",
-            `#include <roughnessmap_fragment>\nroughnessFactor = mix(mix(0.28, ${mesh.userData.keepFrosted ? 0.2 : FROSTED_ROUGHNESS}, archiveQuality), 0.025, glassRevealAtHeight(archiveClarity, vArchiveHeight));`,
+            `#include <roughnessmap_fragment>\nroughnessFactor = mix(mix(0.28, ${mesh.userData.keepFrosted ? 0.38 : FROSTED_ROUGHNESS}, archiveQuality), 0.025, glassRevealAtHeight(archiveClarity, vArchiveHeight));`,
           );
         } else if (!palette.low) {
           // Stable screen-space coverage adds internal geometry without an
@@ -78,6 +81,7 @@ export class CardAppearance {
             "#include <color_fragment>\nfloat coverage = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));\nif (archiveQuality <= coverage) discard;",
           );
         }
+        this.musicLighting?.shade(shader, name);
       };
       mat.customProgramCacheKey = () =>
         `archive-surface-clarity-${name}-${Boolean(palette.low)}-${Boolean(mesh.userData.keepFrosted)}`;

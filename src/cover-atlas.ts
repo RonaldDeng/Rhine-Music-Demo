@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import type { MusicSelectionLighting } from "./music-lighting";
 import type { ArchiveRecord } from "./data";
 
 // Square paper sits behind the CD front glass (front inner surface z=0.0825).
@@ -96,7 +97,7 @@ export class CoverAtlas {
   private readonly tileWidth: number;
   private readonly tileHeight: number;
 
-  constructor(count: number, maxTextureSize: number, anisotropy: number, lit = false) {
+  constructor(count: number, maxTextureSize: number, anisotropy: number, lit = false, lighting?: MusicSelectionLighting) {
     this.rows = Math.ceil(count / this.columns);
     this.tileWidth = Math.min(
       256,
@@ -154,7 +155,12 @@ export class CoverAtlas {
         "#include <uv_vertex>\nvMapUv = coverTile.xy + uv * coverTile.zw;",
       );
     };
-    material.customProgramCacheKey = () => "album-cover-atlas-v1";
+    const atlasCompile = material.onBeforeCompile;
+    material.onBeforeCompile = (shader, renderer) => {
+      atlasCompile.call(material, shader, renderer);
+      lighting?.shade(shader, "Album_Print");
+    };
+    material.customProgramCacheKey = () => `album-cover-atlas-v2-${Boolean(lighting)}`;
     this.array = new THREE.InstancedMesh(geometry, material, count);
     this.array.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     this.array.frustumCulled = false;
@@ -169,6 +175,8 @@ export class CoverAtlas {
       ),
       printMaterial(this.selectedTexture),
     );
+    this.selected.material.onBeforeCompile = (shader) => lighting?.shade(shader, "Album_Print");
+    this.selected.material.customProgramCacheKey = () => `album-cover-selected-v2-${Boolean(lighting)}`;
     this.selected.userData.albumCover = true;
     this.selected.visible = false;
     this.selected.name = "Selected album cover";
@@ -248,6 +256,8 @@ export class CoverAtlas {
     texture.colorSpace = THREE.SRGBColorSpace;
     texture.anisotropy = this.selectedTexture.anisotropy;
     mesh.material = this.selected.material.clone();
+    mesh.material.onBeforeCompile = this.selected.material.onBeforeCompile;
+    mesh.material.customProgramCacheKey = this.selected.material.customProgramCacheKey;
     (mesh.material as THREE.MeshBasicMaterial | THREE.MeshStandardMaterial).map = texture;
     const record = this.selectedRecord;
     mesh.userData.coverDisposed = false;

@@ -283,6 +283,23 @@ export class ArchiveScene {
         mat.roughness = 0.26;
         mat.metalness = 0.08;
       }
+      if (musicLibrary) {
+        mat.envMapIntensity = 0.3;
+        if (name === "Frosted_Polymer") {
+          mat.transmission = 0.88;
+          mat.roughness = 0.38;
+          mat.thickness = 0.16;
+          mat.attenuationColor.set("#f0dbc0");
+          mat.attenuationDistance = 1.3;
+        }
+        if (name === "Ivory_Edges") {
+          mat.transmission = 0.72;
+          mat.thickness = 0.22;
+          mat.roughness = 0.34;
+          mat.attenuationColor.set("#edd3ae");
+          mat.attenuationDistance = 0.8;
+        }
+      }
       configureInternalOptics(name, mat);
       if (name === "Carbon_Ink") continue;
       const selectedMesh = new THREE.Mesh(geom, mat);
@@ -327,7 +344,7 @@ export class ArchiveScene {
           );
           shader.fragmentShader =
             "varying float vPanelHeight;\nuniform float archiveWarmth;\n" + shader.fragmentShader;
-          shader.fragmentShader = shader.fragmentShader.replace(
+          if (!musicLibrary) shader.fragmentShader = shader.fragmentShader.replace(
             "#include <color_fragment>",
             "#include <color_fragment>\ndiffuseColor.rgb *= mix(mix(vec3(0.68, 0.76, 0.86), vec3(1.0), smoothstep(0.1, 1.0, vPanelHeight)), mix(vec3(0.40, 0.30, 0.20), vec3(1.0, 0.98, 0.94), smoothstep(0.1, 1.0, vPanelHeight)), archiveWarmth);",
           );
@@ -348,6 +365,19 @@ export class ArchiveScene {
         arrayMat.color.set("#e4d6c5");
         arrayMat.metalness = 0.05;
       }
+      if (musicLibrary) {
+        if (name === "Ivory_Edges") {
+          arrayMat.transmission = 0.65;
+          arrayMat.thickness = 0.22;
+        }
+        if (name === "Frosted_Polymer") arrayMat.roughness = 0.38;
+        const baseCompile = arrayMat.onBeforeCompile;
+        arrayMat.onBeforeCompile = (shader, renderer) => {
+          baseCompile.call(arrayMat, shader, renderer);
+          this.selectionLighting?.shade(shader, name);
+        };
+        arrayMat.customProgramCacheKey = () => `music-guided-glass-${name}`;
+      }
       this.appearance.register(name, mat, arrayMat);
       const inst = new THREE.InstancedMesh(geom, arrayMat, count);
       inst.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
@@ -357,7 +387,7 @@ export class ArchiveScene {
       this.instances.push(inst);
       this.scene.add(inst);
     }
-    this.covers = new CoverAtlas(count, this.renderer.capabilities.maxTextureSize, this.renderer.capabilities.getMaxAnisotropy(), Boolean(this.selectionLighting));
+    this.covers = new CoverAtlas(count, this.renderer.capabilities.maxTextureSize, this.renderer.capabilities.getMaxAnisotropy(), Boolean(this.selectionLighting), this.selectionLighting);
     this.scene.add(this.covers.array);
     this.model.add(this.covers.selected);
     this.labelCanvas.width = 1024;
@@ -422,7 +452,22 @@ export class ArchiveScene {
 
   enableSelectionLighting() {
     this.selectionLighting ??= new MusicSelectionLighting(this.scene);
+    this.appearance.musicLighting = this.selectionLighting;
+    this.softenMusicContactShadows();
     this.setTheme(this.theme);
+  }
+
+  private softenMusicContactShadows() {
+    this.light.shadow.intensity = 0.32;
+    this.ao.kernelRadius = 0.18;
+    this.ao.maxDistance = 0.035;
+    // SSAO assumes opaque solids. Thin transmitting cases need only a soft
+    // contact cue: bound the darkest AO multiplier to 0.78, not solid black.
+    this.ao.copyMaterial.fragmentShader = this.ao.copyMaterial.fragmentShader.replace(
+      "gl_FragColor = opacity * texel;",
+      "gl_FragColor = vec4(mix(vec3(1.0), texel.rgb, 0.22), texel.a);",
+    );
+    this.ao.copyMaterial.needsUpdate = true;
   }
 
   setTheme(theme: "day" | "night" | "dusk") {
@@ -560,6 +605,7 @@ export class ArchiveScene {
       this.composer.insertPass(this.ao, index);
       old.dispose();
       this.aoKernelSize = quality.aoSamples;
+      if (this.selectionLighting) this.softenMusicContactShadows();
     }
     this.ao.enabled = quality.aoSamples > 0;
     this.bokeh.enabled = quality.depthOfField > 0;
