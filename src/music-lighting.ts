@@ -2,19 +2,21 @@ import * as THREE from "three";
 
 /** Side key plus a bounded approximation of light scattered inside the CD shell. */
 export class MusicSelectionLighting {
-  readonly spot = new THREE.SpotLight("#ffe3b2", 220, 24, 0.28, 0.9, 2);
+  readonly spot = new THREE.SpotLight("#ffe3b2", 180, 24, 0.25, 0.9, 2);
   private readonly aim = new THREE.Vector3();
   private readonly anchor = new THREE.Vector3();
   private readonly offset = new THREE.Vector3();
+  private readonly anchorVelocity = new THREE.Vector3();
+  private readonly columnVelocity = new THREE.Vector3();
   private initialized = false;
   private readonly column = { value: new THREE.Vector3() };
-  private readonly scatterColor = { value: new THREE.Color("#ffe2b5") };
+  private readonly scatterColor = { value: new THREE.Color("#ffdba3") };
   private readonly scatterStrength = { value: 1 };
 
   constructor(private readonly scene: THREE.Scene) {
     this.spot.name = "Selected album soft key";
-    // Reuse the main key's existing shadows. A second shadow render across the
-    // entire glass array would be a poor trade for this broad local fill.
+    // Existing soft contact shadows are sufficient; the local key adds no
+    // second shadow-map render across the entire glass array.
     this.spot.castShadow = false;
     this.spot.visible = false;
     scene.add(this.spot, this.spot.target);
@@ -29,8 +31,8 @@ export class MusicSelectionLighting {
       if (child instanceof THREE.DirectionalLight && child !== key) child.intensity = 0.045;
     }
     this.spot.color.set(night ? "#dbe9ff" : "#ffe3b2");
-    this.spot.intensity = night ? 155 : 220;
-    this.scatterColor.value.set(night ? "#c6dfff" : "#ffe2b5");
+    this.spot.intensity = night ? 130 : 180;
+    this.scatterColor.value.set(night ? "#cee5ff" : "#ffdba3");
     this.scatterStrength.value = night ? 0.72 : 1;
   }
 
@@ -65,21 +67,41 @@ export class MusicSelectionLighting {
     const spine = surface === "Ivory_Edges";
     shader.fragmentShader = shader.fragmentShader.replace("#include <opaque_fragment>", `
       float laneDistance = abs(vMusicOrigin.x - musicLightColumn.x);
-      float laneLight = exp(-pow(laneDistance / 2.0, 4.0));
-      float rowDistance = (vMusicOrigin.z - musicLightColumn.z) / 14.0;
+      float laneRadius = laneDistance / 3.2;
+      float laneLight = exp(-laneRadius * laneRadius * laneRadius * laneRadius);
+      float rowDistance = (vMusicOrigin.z - musicLightColumn.z) / 5.5;
       float rowLight = exp(-rowDistance * rowDistance);
-      float guidedLight = laneLight * mix(0.28, 1.0, rowLight);
-      outgoingLight *= mix(0.9, 1.15, guidedLight);
+      float hotDistance = (vMusicOrigin.z - musicLightColumn.z) / 1.1;
+      float hotLight = exp(-hotDistance * hotDistance);
+      // The reference has a warm local ribbon, not uniformly glowing spines.
+      float guidedLight = laneLight * mix(0.12, 1.0, rowLight);
+      outgoingLight *= mix(0.94, 1.08, guidedLight);
       ${glass || spine ? `
-        // Strong at the illuminated narrow edge, then absorbed across the sheet.
         float fromSpine = max(0.0, vMusicLocal.x + 1.9);
-        float edgeTransport = exp(-fromSpine * 1.6);
-        float lowerLight = mix(1.0, 0.52, clamp(vMusicLocal.y / 3.7, 0.0, 1.0));
-        float edgeScatter = ${spine ? '0.52' : '0.32'} * edgeTransport + ${spine ? '0.09' : '0.035'};
+        float edgeTransport = exp(-fromSpine * 1.35);
+        float lowerLight = mix(1.0, 0.62, clamp(vMusicLocal.y / 3.7, 0.0, 1.0));
+        float topRim = exp(-max(0.0, 3.7 - vMusicLocal.y) * 22.0);
+        float grazing = 1.0 - clamp(abs(dot(normal, normalize(vViewPosition))), 0.0, 1.0);
+        float edgeScatter = ${spine ? '0.34' : '0.17'} * edgeTransport + ${spine ? '0.055' : '0.008'};
         outgoingLight += musicScatterColor * musicScatterStrength * guidedLight * edgeScatter * lowerLight;
-      ` : `outgoingLight += diffuseColor.rgb * guidedLight * 0.22;`}
+        // A narrow glint at the top and the lit spine changes with viewing angle.
+        // The cover interior receives very little additive light, preserving ink.
+        float ribbon = topRim * (0.22 + 0.78 * edgeTransport) + ${spine ? '0.18' : '0.035'} * edgeTransport * grazing;
+        outgoingLight += musicScatterColor * musicScatterStrength * laneLight * hotLight * ribbon * 0.8;
+      ` : surface === "Album_Print" ? `outgoingLight += diffuseColor.rgb * guidedLight * 0.20;` : ''}
       #include <opaque_fragment>
     `);
+  }
+
+  private follow(value: THREE.Vector3, velocity: THREE.Vector3, target: THREE.Vector3, dt: number) {
+    const rate = 5.0;
+    const decay = Math.exp(-rate * dt);
+    for (const axis of ["x", "y", "z"] as const) {
+      const delta = value[axis] - target[axis];
+      const impulse = velocity[axis] + rate * delta;
+      value[axis] = target[axis] + (delta + impulse * dt) * decay;
+      velocity[axis] = (velocity[axis] - rate * impulse * dt) * decay;
+    }
   }
 
   update(model: THREE.Object3D, camera: THREE.Camera, dt: number, visible: boolean, reduced: boolean) {
@@ -92,10 +114,18 @@ export class MusicSelectionLighting {
     // scrolls and periodically rebases its coordinates during infinite browsing.
     model.updateWorldMatrix(true, false);
     this.aim.set(-1.95, 2.3, 0).applyMatrix4(model.matrixWorld);
-    if (!this.initialized || reduced) this.anchor.copy(this.aim);
-    else this.anchor.lerp(this.aim, 1 - Math.exp(-dt * 8));
-    if (!this.initialized || reduced) this.column.value.copy(model.position);
-    else this.column.value.lerp(model.position, 1 - Math.exp(-dt * 8));
+    if (!this.initialized || reduced) {
+      this.anchor.copy(this.aim);
+      this.column.value.copy(model.position);
+      this.anchorVelocity.set(0, 0, 0);
+      this.columnVelocity.set(0, 0, 0);
+    } else {
+      // Preserve velocity on repeated input. A critically damped start follows
+      // the soft lift; the wider lane footprint crossfades neighboring columns
+      // while travelling between them instead of extinguishing both midway.
+      this.follow(this.anchor, this.anchorVelocity, this.aim, dt);
+      this.follow(this.column.value, this.columnVelocity, model.position, dt);
+    }
     this.initialized = true;
     this.spot.target.position.copy(this.anchor);
     // Camera-local -X/-Y: light enters from the lower-left of the picture and

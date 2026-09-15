@@ -16,7 +16,7 @@
     "format": "prettier --write src scripts index.html package.json tsconfig.json",
     "preview": "vite preview --host 127.0.0.1",
     "music": "node scripts/music-server.mjs",
-    "check:music": "node --test scripts/check-music-library.mjs scripts/check-album-introductions.mjs && node scripts/check-music-scene.mjs && node --experimental-strip-types --test scripts/check-music-player.mjs"
+    "check:music": "node --test scripts/check-music-library.mjs scripts/check-album-introductions.mjs && node scripts/check-music-scene.mjs && node --experimental-strip-types --test scripts/check-music-player.mjs && node scripts/check-music-motion.mjs && node scripts/check-music-lighting.mjs"
   },
   "dependencies": {
     "@kitlangton/rolling-number": "0.4.1",

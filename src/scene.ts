@@ -37,6 +37,7 @@ import {
   archiveWave,
   extraction,
   baselineSelectionWave,
+  musicSelectionWave,
   rippleEnvelope,
   settlingWave,
   damp,
@@ -289,13 +290,15 @@ export class ArchiveScene {
           mat.transmission = 0.88;
           mat.roughness = 0.38;
           mat.thickness = 0.16;
-          mat.attenuationColor.set("#f0dbc0");
+          mat.attenuationColor.set("#e7cba7");
           mat.attenuationDistance = 1.3;
         }
         if (name === "Ivory_Edges") {
           mat.transmission = 0.72;
           mat.thickness = 0.22;
-          mat.roughness = 0.34;
+          mat.roughness = 0.30;
+          mat.clearcoat = 0.4;
+          mat.clearcoatRoughness = 0.18;
           mat.attenuationColor.set("#edd3ae");
           mat.attenuationDistance = 0.8;
         }
@@ -353,7 +356,7 @@ export class ArchiveScene {
         arrayMat.clearcoat = 0.3;
         arrayMat.clearcoatRoughness = 0.25;
       }
-      if (name === "Optical_Diffuser") arrayMat.color.set(musicLibrary ? "#c5b7a1" : "#806447");
+      if (name === "Optical_Diffuser") arrayMat.color.set(musicLibrary ? "#cbb69c" : "#806447");
       if (name === "Ivory_Edges") {
         arrayMat.transmission = 0;
         arrayMat.color.set(
@@ -370,7 +373,11 @@ export class ArchiveScene {
           arrayMat.transmission = 0.65;
           arrayMat.thickness = 0.22;
         }
-        if (name === "Frosted_Polymer") arrayMat.roughness = 0.38;
+        if (name === "Frosted_Polymer") {
+          arrayMat.roughness = 0.38;
+          arrayMat.transmission = 0.86;
+          arrayMat.thickness = 0.18;
+        }
         const baseCompile = arrayMat.onBeforeCompile;
         arrayMat.onBeforeCompile = (shader, renderer) => {
           baseCompile.call(arrayMat, shader, renderer);
@@ -1035,10 +1042,10 @@ export class ArchiveScene {
           const distance = Math.hypot(row - p.row, (lane - p.lane) * 2.2);
           const age = time - p.time;
           ripple +=
-            this.selectionPulse(distance, age) *
+            (musicLibrary ? musicSelectionWave(distance, age) : this.selectionPulse(distance, age)) *
             (this.deferSelectionPulse ? rippleEnvelope(distance, age) : 1);
         }
-        height += THREE.MathUtils.clamp(ripple, -0.6, 0.6) * this.pulseGain;
+        height += THREE.MathUtils.clamp(ripple, musicLibrary ? -0.24 : -0.6, musicLibrary ? 0.24 : 0.6) * this.pulseGain;
       }
       const distance = row - this.shoulder.value;
       return (

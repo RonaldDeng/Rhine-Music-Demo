@@ -51,6 +51,17 @@ export function baselineSelectionWave(distance: number, age: number) {
   );
 }
 
+// Music's taller 0.9 preview lift must not stack with the archive's fast crest.
+// Start with zero slope, retain a small signed settling wave, and propagate it
+// outwards without changing the archive/reference timeline.
+export function musicSelectionWave(distance: number, age: number) {
+  if (age < 0 || age > 3.2) return 0;
+  return (
+    0.32 * smooth(age / 0.46) * Math.exp(-age * 1.35) *
+    Math.cos((distance - age * 5.5) * 0.58) * bell(distance - age * 5.5, 3.4)
+  );
+}
+
 // Retained for the comparison experiments; the user chose the signed baseline.
 export function selectionWave(distance: number, age: number) {
   return Math.max(0, baselineSelectionWave(distance, age));
