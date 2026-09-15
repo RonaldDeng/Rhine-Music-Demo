@@ -14,6 +14,8 @@ import { configureInternalOptics } from "./internal-optics";
 import { DecryptionController } from "./decryption";
 import { archiveColumns, columnFiles, fileAtSlot, fileLocation, musicLibrary, records, slotStride } from "./data";
 import { CoverAtlas } from "./cover-atlas";
+import { MusicSelectionLighting } from "./music-lighting";
+import { MUSIC_CD_ASSET } from "./music-cd-asset";
 import {
   cellKey,
   sameCell,
@@ -112,6 +114,7 @@ export class ArchiveScene {
   private floor: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshStandardMaterial>;
   private stars?: THREE.Points<THREE.BufferGeometry, THREE.PointsMaterial>;
   private covers?: CoverAtlas;
+  private selectionLighting?: MusicSelectionLighting;
   private theme: "day" | "night" | "dusk" = "day";
   private themeWarmth = { value: 1 };
   private clock = 0;
@@ -216,7 +219,7 @@ export class ArchiveScene {
     this.composer.addPass(new OutputPass());
     this.bindPointer();
   }
-  async load(assetUrl = publicAsset("assets/archive-cassette.glb")) {
+  async load(assetUrl = publicAsset(musicLibrary ? MUSIC_CD_ASSET : "assets/archive-cassette.glb")) {
     this.labelMark.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(labelMarkSvg)}`;
     await this.labelMark.decode();
     const gltf = await new GLTFLoader().loadAsync(
@@ -284,6 +287,7 @@ export class ArchiveScene {
       if (name === "Carbon_Ink") continue;
       const selectedMesh = new THREE.Mesh(geom, mat);
       selectedMesh.userData.surface = name;
+      selectedMesh.userData.keepFrosted = musicLibrary && name === "Frosted_Polymer";
       selectedMesh.castShadow = name === "Optical_Diffuser";
       selectedMesh.receiveShadow = true;
       this.model.add(selectedMesh);
@@ -332,7 +336,7 @@ export class ArchiveScene {
         arrayMat.clearcoat = 0.3;
         arrayMat.clearcoatRoughness = 0.25;
       }
-      if (name === "Optical_Diffuser") arrayMat.color.set("#806447");
+      if (name === "Optical_Diffuser") arrayMat.color.set(musicLibrary ? "#c5b7a1" : "#806447");
       if (name === "Ivory_Edges") {
         arrayMat.transmission = 0;
         arrayMat.color.set(
@@ -353,7 +357,7 @@ export class ArchiveScene {
       this.instances.push(inst);
       this.scene.add(inst);
     }
-    this.covers = new CoverAtlas(count, this.renderer.capabilities.maxTextureSize, this.renderer.capabilities.getMaxAnisotropy());
+    this.covers = new CoverAtlas(count, this.renderer.capabilities.maxTextureSize, this.renderer.capabilities.getMaxAnisotropy(), Boolean(this.selectionLighting));
     this.scene.add(this.covers.array);
     this.model.add(this.covers.selected);
     this.labelCanvas.width = 1024;
@@ -416,6 +420,11 @@ export class ArchiveScene {
     await this.covers.select(records[index]);
   }
 
+  enableSelectionLighting() {
+    this.selectionLighting ??= new MusicSelectionLighting(this.scene);
+    this.setTheme(this.theme);
+  }
+
   setTheme(theme: "day" | "night" | "dusk") {
     this.theme = theme;
     this.themeWarmth.value = theme === "day" ? 1 : 0;
@@ -434,6 +443,7 @@ export class ArchiveScene {
     }
     if (this.stars) this.stars.visible = theme === "night";
     this.appearance.setTheme(theme);
+    this.selectionLighting?.setTheme(theme, this.light);
   }
 
   private assemblyTemplate?: Promise<THREE.Group>;
@@ -1344,6 +1354,7 @@ export class ArchiveScene {
         this.quality.depthOfField) /
       100;
     this.renderer.info.reset();
+    this.selectionLighting?.update(this.model, this.camera, dt, musicLibrary && records.length > 0 && this.model.visible, this.reduced);
     // AO normals and bokeh depth render this scene again without moving it.
     // Music frames share the first pass's shadows; the archive reference keeps
     // Three's original automatic updates. Animated casters still update each frame.
@@ -1403,6 +1414,11 @@ export class ArchiveScene {
       selectedAlbumId: records[fileAtSlot(this.selectedSlot)]?.album?.id ?? null,
       albumCovers: this.covers?.array.visible ?? false,
       theme: this.theme,
+      selectionLight: this.selectionLighting ? {
+        visible: this.selectionLighting.spot.visible,
+        position: this.selectionLighting.spot.position.toArray(),
+        target: this.selectionLighting.spot.target.position.toArray(),
+      } : null,
       selectedCell: { ...this.selectedCell },
       coordinateOrigin: { ...this.coordinateOrigin },
       poolBounds: {

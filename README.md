@@ -1,6 +1,6 @@
 # Rhine Music Demo
 
-基于 [LBEILC/RhineLabUI](https://github.com/LBEILC/RhineLabUI) 改造的本地音乐播放器原型，由 [RonaldDeng](https://github.com/RonaldDeng) 维护音乐适配。用实体 CD 盒般的三维卡片浏览专辑，保留原工程的开场、抽取、磨砂玻璃、旋转和拆解动效。
+基于 [LBEILC/RhineLabUI](https://github.com/LBEILC/RhineLabUI) 改造的本地音乐播放器原型，由 [RonaldDeng](https://github.com/RonaldDeng) 维护音乐适配。用实体 CD 盒般的三维卡片浏览专辑，保留原工程的开场、抽取与旋转动效，音乐模式使用简化磨砂 CD 盒。
 
 这是独立维护的音乐衍生版本，运行在本机；原项目在线站点展示的是上游档案终端。初始基于上游提交 [`5abab02`](https://github.com/LBEILC/RhineLabUI/commit/5abab02367465d9189f4ae65bcb6f17fdb5938f7)，保留原提交历史、作者署名与完整 [MIT License](LICENSE)。原项目介绍、截图、资源与许可说明保存在 [README.original.md](README.original.md)。
 
@@ -11,8 +11,9 @@
 - **按流派浏览**：左右切换流派，上下切换该流派的专辑。流派别名和人工归类保存在本地索引规则中，可合并“国语流行音乐”“华语流行音乐”等名称。
 - **专辑详情**：`01 歌单` 中选歌，`02 专辑介绍` 查看有来源的介绍。展示发行年份、歌手、流派、CD 数、曲目数、格式与编码、位深与采样率、码率和时长。
 - **极简播放**：右上角播放／暂停、停止按钮；无底部进度栏、上一首／下一首占位控件及收藏入口。连续播放当前专辑的曲目。
-- **两套主题**：暖昼、深夜。深夜采用极简星点背景和白色透光盒体；独立模型查看器同步主题。
-- **实体模型操作**：旋转、平移、缩放、清晰／磨砂、拆解和一键重组。封面随盖板一起拆开，保留内部环形结构。
+- **两套主题**：暖昼、深夜。深夜采用极简星点背景和白色透光盒体。
+- **待选专辑聚光**：局部侧光从画面左下方照向待选专辑侧边，平滑跟随专辑，暖昼采用暖色光，深夜采用冷白光；背景补光收弱，封面作为哑光印刷面参与光照。抽取、归位和封面原始比例保持一致。
+- **简化 CD 盒**：保留连续侧条与磨砂壳体，封面位于盖板后并保持原始比例。没有内部光盘、环组或机械结构；详情页拖动旋转仍可用，独立 360° 查看、拆解和重组入口暂时屏蔽。Blender 源文件与生成脚本见 `art/music-cd.blend`、`art/build_music_cd.py`。
 - **声音与画质**：歌曲和氛围配乐淡入淡出衔接；歌曲、配乐、交互音效音量独立。保留画质预设、精细设置、减少动态效果和全屏。
 
 最近的界面调整：长专辑名自适应字号，双语译名以较小字号分行；删除“完整封面 · 原始比例”说明小字。文字遮罩可见后的停留约为 **0.35 秒**，扫开仍为 **0.95 秒**，保留逐行节奏；`01 / 02` 页签保留内容淡入和下划线平移。
@@ -70,8 +71,7 @@ npm run music -- --port 5175
 | 右上播放／暂停、停止 | 控制歌曲；停止后恢复已启用的氛围配乐 |
 | `/` 或“搜索” | 搜索本地曲库 |
 | `Esc` | 关闭弹窗、退出查看器或返回专辑架 |
-| “360° 查看专辑模型” | 打开独立查看器，拖动旋转、滚轮缩放、方向键平移 |
-| 查看器“拆解／一键重组” | 分开或收回部件，封面跟随盖板 |
+| 详情卡片拖动 | 旋转查看 CD 盒，独立 360°／展开入口暂时屏蔽 |
 | 设置 | 调节播放音量、氛围配乐、音效和画质；提供介绍更新入口 |
 
 ## 曲库索引与在线资料
@@ -112,7 +112,7 @@ Windows 后续考虑 **foobar2000 + Beefweb** 作为播放内核。目前只有�
 | [src/music-title.ts](src/music-title.ts) | 双语长标题布局 |
 | [src/music-player.ts](src/music-player.ts) | 本地队列、播放和配乐衔接 |
 | [src/scene.ts](src/scene.ts)、[src/cover-atlas.ts](src/cover-atlas.ts) | 三维阵列、独立封面映射与待选抬升 |
-| [src/model-viewer.ts](src/model-viewer.ts)、[src/viewer-album-cover.ts](src/viewer-album-cover.ts) | 模型查看、盖板封面与拆解 |
+| [src/model-viewer.ts](src/model-viewer.ts)、[src/viewer-album-cover.ts](src/viewer-album-cover.ts) | 原版查看器实现，音乐模式暂时停用 |
 | [scripts/music-server.mjs](scripts/music-server.mjs)、[scripts/music-library.mjs](scripts/music-library.mjs) | 本地接口、扫描、索引与分类 |
 | [scripts/album-introductions.mjs](scripts/album-introductions.mjs) | 百科介绍检索及匹配 |
 | [src/archive-main.ts](src/archive-main.ts) | 保留的原版档案终端 |

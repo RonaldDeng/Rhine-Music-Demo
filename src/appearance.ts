@@ -55,7 +55,9 @@ export class CardAppearance {
           );
           shader.fragmentShader = shader.fragmentShader.replace(
             "#include <transmission_pars_fragment>",
-            frostedTransmissionGLSL + "\n" + THREE.ShaderChunk.transmission_pars_fragment.replace(
+            (mesh.userData.keepFrosted
+              ? frostedTransmissionGLSL.replace("panelPixels * 0.016", "panelPixels * 0.003")
+              : frostedTransmissionGLSL) + "\n" + THREE.ShaderChunk.transmission_pars_fragment.replace(
               "float lod = log2( transmissionSamplerSize.x ) * applyIorToRoughness( roughness, ior );",
               "float lod = archiveTransmissionLod(roughness, ior, transmissionSamplerSize);",
             ),
@@ -66,7 +68,7 @@ export class CardAppearance {
           );
           shader.fragmentShader = shader.fragmentShader.replace(
             "#include <roughnessmap_fragment>",
-            `#include <roughnessmap_fragment>\nroughnessFactor = mix(mix(0.28, ${FROSTED_ROUGHNESS}, archiveQuality), 0.025, glassRevealAtHeight(archiveClarity, vArchiveHeight));`,
+            `#include <roughnessmap_fragment>\nroughnessFactor = mix(mix(0.28, ${mesh.userData.keepFrosted ? 0.2 : FROSTED_ROUGHNESS}, archiveQuality), 0.025, glassRevealAtHeight(archiveClarity, vArchiveHeight));`,
           );
         } else if (!palette.low) {
           // Stable screen-space coverage adds internal geometry without an
@@ -78,7 +80,7 @@ export class CardAppearance {
         }
       };
       mat.customProgramCacheKey = () =>
-        `archive-surface-clarity-${name}-${Boolean(palette.low)}`;
+        `archive-surface-clarity-${name}-${Boolean(palette.low)}-${Boolean(mesh.userData.keepFrosted)}`;
     }
   }
 
@@ -88,6 +90,7 @@ export class CardAppearance {
     group.traverse((child) => {
       if (!(child instanceof THREE.Mesh) || !child.userData.glassClarity)
         return;
+      if (child.userData.keepFrosted) return;
       child.userData.glassClarity.value = clarity;
       if (child.userData.surface !== "Frosted_Polymer") return;
       const mat = child.material as Surface;

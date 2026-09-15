@@ -1,9 +1,9 @@
 import * as THREE from "three";
 import type { ArchiveRecord } from "./data";
 
-// The GLB's front cover is z=0.206; the original printed ink reaches z=0.2464.
-// A single flat print at z=0.255 leaves the original shell and fasteners intact.
-export const COVER_SIZE = { width: 4.2, height: 3.15, y: 1.85, z: 0.255 };
+// Square paper sits behind the CD front glass (front inner surface z=0.0825).
+// The spine has its own strip; contain mapping preserves every cover aspect ratio.
+export const COVER_SIZE = { width: 3.35, height: 3.35, x: 0.16, y: 1.85, z: 0.075 };
 type CoverImage = { source: HTMLCanvasElement; width: number; height: number };
 
 export function containCover(
@@ -80,7 +80,7 @@ function paintCover(
 /** One fixed-size atlas for the visible pool, regardless of total library size. */
 export class CoverAtlas {
   readonly array: THREE.InstancedMesh;
-  readonly selected: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial>;
+  readonly selected: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial | THREE.MeshStandardMaterial>;
   private readonly atlasCanvas = document.createElement("canvas");
   private readonly selectedCanvas = document.createElement("canvas");
   private readonly tileCanvas = document.createElement("canvas");
@@ -96,20 +96,20 @@ export class CoverAtlas {
   private readonly tileWidth: number;
   private readonly tileHeight: number;
 
-  constructor(count: number, maxTextureSize: number, anisotropy: number) {
+  constructor(count: number, maxTextureSize: number, anisotropy: number, lit = false) {
     this.rows = Math.ceil(count / this.columns);
     this.tileWidth = Math.min(
       256,
       Math.floor(maxTextureSize / this.columns),
-      Math.floor(((maxTextureSize / this.rows) * 4) / 3),
+      Math.floor(maxTextureSize / this.rows),
     );
-    this.tileHeight = Math.floor((this.tileWidth * 3) / 4);
+    this.tileHeight = this.tileWidth;
     this.atlasCanvas.width = this.columns * this.tileWidth;
     this.atlasCanvas.height = this.rows * this.tileHeight;
     this.tileCanvas.width = this.tileWidth;
     this.tileCanvas.height = this.tileHeight;
     this.selectedCanvas.width = 1024;
-    this.selectedCanvas.height = 768;
+    this.selectedCanvas.height = 1024;
     this.slots = Array(count);
     this.atlas = new THREE.CanvasTexture(this.atlasCanvas);
     this.atlas.colorSpace = THREE.SRGBColorSpace;
@@ -123,7 +123,7 @@ export class CoverAtlas {
     const geometry = new THREE.PlaneGeometry(
       COVER_SIZE.width,
       COVER_SIZE.height,
-    ).translate(0, COVER_SIZE.y, COVER_SIZE.z);
+    ).translate(COVER_SIZE.x, COVER_SIZE.y, COVER_SIZE.z);
     const tileOffsets = new Float32Array(count * 4);
     for (let i = 0; i < count; i++) {
       tileOffsets.set(
@@ -140,12 +140,13 @@ export class CoverAtlas {
       "coverTile",
       new THREE.InstancedBufferAttribute(tileOffsets, 4),
     );
-    const material = new THREE.MeshBasicMaterial({
-      map: this.atlas,
-      alphaTest: 0.025,
-      toneMapped: false,
-      side: THREE.FrontSide,
-    });
+    // The same matte paper responds to the key light in the shelf, on the
+    // selected album and in returning snapshots. Texture/contain mapping stays
+    // identical, so changing selection does not change the cover's proportions.
+    const printMaterial = (map: THREE.Texture) => lit
+      ? new THREE.MeshStandardMaterial({ map, alphaTest: 0.025, roughness: 0.88, metalness: 0, envMapIntensity: 0.25 })
+      : new THREE.MeshBasicMaterial({ map, alphaTest: 0.025, toneMapped: false });
+    const material = printMaterial(this.atlas);
     material.onBeforeCompile = (shader) => {
       shader.vertexShader = "attribute vec4 coverTile;\n" + shader.vertexShader;
       shader.vertexShader = shader.vertexShader.replace(
@@ -159,21 +160,19 @@ export class CoverAtlas {
     this.array.frustumCulled = false;
     this.array.visible = false;
     this.array.name = "Album cover atlas";
+    this.array.receiveShadow = lit;
     this.selected = new THREE.Mesh(
       new THREE.PlaneGeometry(COVER_SIZE.width, COVER_SIZE.height).translate(
-        0,
+        COVER_SIZE.x,
         COVER_SIZE.y,
         COVER_SIZE.z,
       ),
-      new THREE.MeshBasicMaterial({
-        map: this.selectedTexture,
-        alphaTest: 0.025,
-        toneMapped: false,
-      }),
+      printMaterial(this.selectedTexture),
     );
     this.selected.userData.albumCover = true;
     this.selected.visible = false;
     this.selected.name = "Selected album cover";
+    this.selected.receiveShadow = lit;
   }
 
   private loadImage(url?: string) {
@@ -249,7 +248,7 @@ export class CoverAtlas {
     texture.colorSpace = THREE.SRGBColorSpace;
     texture.anisotropy = this.selectedTexture.anisotropy;
     mesh.material = this.selected.material.clone();
-    (mesh.material as THREE.MeshBasicMaterial).map = texture;
+    (mesh.material as THREE.MeshBasicMaterial | THREE.MeshStandardMaterial).map = texture;
     const record = this.selectedRecord;
     mesh.userData.coverDisposed = false;
     void this.loadImage(record?.album?.coverUrl).then((image) => {

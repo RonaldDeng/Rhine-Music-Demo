@@ -183,7 +183,7 @@ stage.innerHTML = `
   </section>
   <section id="music-detail" class="music-detail" aria-label="专辑详情" hidden>
     <button class="music-back" data-action="back">← 返回专辑架 <kbd>ESC</kbd></button>
-    <div class="card-caption"><span id="detail-card-id"></span><small>拖动卡片，查看完整封面</small><button data-action="model-viewer">360° 查看专辑模型 ↗</button></div>
+    <div class="card-caption"><span id="detail-card-id"></span><small>拖动卡片，查看完整封面</small></div>
     <article id="album-detail-content" tabindex="-1"></article>
   </section>
   <div id="music-empty" class="music-empty" hidden><small>YOUR PRIVATE COLLECTION</small><h1>让音乐进入这座档案馆。</h1><p>选择本地音乐文件夹，专辑封面会出现在每一张卡片上。</p><button data-action="library">设置音乐文件夹 ↗</button><button data-action="demo" class="subtle">先查看演示封面</button></div>
@@ -964,29 +964,6 @@ function playAlbum(id?: string) {
   player.setQueue(a.tracks);
   void player.play(id || a.tracks[0].id);
 }
-function openViewer() {
-  const a = currentAlbum();
-  if (!a || !scene) return;
-  viewer ??= new ModelViewer(
-    stage,
-    () => {
-      effects.setScene(mode);
-      effects.play("page-close");
-    },
-    (sound) => effects.play(sound === "tick" ? "ui-tick" : sound),
-  );
-  viewer.setQuality(renderQuality);
-  viewer.setTheme(preferences.theme);
-  viewer.setAlbum(a);
-  viewer.open(
-    a.id,
-    a.title,
-    () => scene!.createAssemblyModel(),
-    preferences.reduced,
-  );
-  effects.setScene("viewer");
-  effects.play("page-open");
-}
 
 document.addEventListener("click", (e) => {
   const target = (e.target as HTMLElement).closest<HTMLElement>(
@@ -1049,7 +1026,7 @@ document.addEventListener("click", (e) => {
       setMode("archive");
       break;
     case "model-viewer":
-      openViewer();
+      // Temporarily unavailable for the simplified CD shell (no inner assembly).
       break;
     case "replay":
       closePanel(() => boot?.replay());
@@ -1329,8 +1306,9 @@ function frame(ms: number) {
       // Keep read-only render diagnostics alongside the existing resolution
       // attributes, without adding controls or per-frame DOM work.
       if (!viewer?.isOpen) {
-        const { drawCalls, triangles } = scene.getStats();
+        const { drawCalls, triangles, selectionLight } = scene.getStats();
         $("#three-scene").dataset.renderStats = JSON.stringify({ drawCalls, triangles });
+        $("#three-scene").dataset.selectionLight = JSON.stringify(selectionLight);
       }
       frameCount = 0;
       lastFrame = ms;
@@ -1351,6 +1329,8 @@ async function start() {
   try {
     fit();
     scene = new ArchiveScene($("#three-scene"));
+    // Keep a direct visual comparison URL without adding another user setting.
+    if (new URLSearchParams(location.search).get("lighting") !== "baseline") scene.enableSelectionLighting();
     await Promise.all([
       scene.load(),
       document.fonts.load("400 20px MiSans"),

@@ -38,7 +38,9 @@ export function setupMusicTitleLayout(root: HTMLElement) {
     const available = callout.clientHeight;
     const base = Number.parseFloat(getComputedStyle(title).fontSize);
     const min = Math.min(base, innerWidth <= 700 ? 18 : 20);
-    const main = title.querySelector<HTMLElement>(".music-title-main")!;
+    const main = title.querySelector<HTMLElement>(".music-title-main");
+    // The resize observer can run before the library has supplied its title.
+    if (!main) return;
     const outside = () =>
       [...callout.children]
         .filter((node) => node !== title)
