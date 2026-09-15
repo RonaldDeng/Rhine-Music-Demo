@@ -577,13 +577,14 @@ function setMode(next: "archive" | "detail") {
     content.style.opacity = String(visibility);
     content.style.transform = `translateY(${(1 - visibility) * 16}px)`;
     content.inert = visibility < 0.1;
-    documentDecryption.reset(
-      $("#album-detail-content"),
-      preferences.reduced || scene?.decryptionFrame.phase === "clear",
-    );
     pendingDetailFocus = true;
     browseTransition.hide(preferences.reduced, () => {
-      if (mode === "detail") detailTransition.show(preferences.reduced);
+      if (mode !== "detail") return;
+      detailTransition.show(preferences.reduced);
+      // Hidden elements have no text geometry and ignore scroll resets.
+      // Every opening starts at the top with its own text reveal.
+      content.scrollTop = 0;
+      documentDecryption.reset(content, preferences.reduced);
     });
   } else {
     pendingDetailFocus = false;
