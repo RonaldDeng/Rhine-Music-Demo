@@ -1,10 +1,10 @@
-# Rhine Music Demo · v0.1.0
+# Rhine Music Demo · v0.1.1
 
 用三维玻璃 CD 盒浏览和播放本地音乐。基于 [LBEILC/RhineLabUI](https://github.com/LBEILC/RhineLabUI) 改造，由 [RonaldDeng](https://github.com/RonaldDeng) 维护音乐适配。
 
 **本版本整理自 V3，目前仅支持 macOS，暂不支持 Windows。** 播放器在本机运行，通过浏览器显示界面；不附带歌曲，也不是 `.app` 安装包。
 
-[下载 v0.1.0](https://github.com/RonaldDeng/Rhine-Music-Demo/releases/tag/v0.1.0) · [更新记录](CHANGELOG.md) · [音乐服务说明](docs/MUSIC-SERVICE.md)
+[下载 v0.1.1](https://github.com/RonaldDeng/Rhine-Music-Demo/releases/tag/v0.1.1) · [更新记录](CHANGELOG.md) · [音乐服务说明](docs/MUSIC-SERVICE.md)
 
 ## 功能
 
@@ -12,13 +12,13 @@
 - **三维专辑架**：玻璃盒体、原比例封面、循环阵列，以及连贯的抽取、转正和收纳动作。加载后播放约 5.2 秒的三维进场，可跳过；进入后由你选择专辑。
 - **查找与排列**：支持搜索，按流派、歌手或专辑名排列；底部滑尺随选择移动，跨类别及首尾连续切换。保留 `?nav=previous` 旧导航回退入口。
 - **播放与详情**：点击歌单中的歌曲开始播放，连续播放当前专辑；提供播放、暂停和停止，展示格式、时长等元数据及有来源的专辑介绍。
-- **外观与声音**：暖昼／深夜主题平滑切换，歌名滚动过渡，横屏与竖屏布局；歌曲、氛围配乐和界面音效独立调节，提供画质设置与减少动态效果。
+- **外观与声音**：暖昼／深夜主题平滑切换，歌名滚动过渡，横屏与竖屏布局；竖屏下右侧渐变遮罩平滑淡出。歌曲、氛围配乐和界面音效独立调节，提供画质设置与减少动态效果。
 
 ## 快速开始（macOS）
 
 需要 [Node.js](https://nodejs.org/) **22.12 或更新的 LTS 版本**（包含 npm），以及支持 WebGL 2 的现代浏览器。普通运行无需 Blender。
 
-1. 从 [Release](https://github.com/RonaldDeng/Rhine-Music-Demo/releases/tag/v0.1.0) 下载 `Rhine-Music-Demo-v0.1.0-macOS.zip`，完整解压到本地文件夹。
+1. 从 [Release](https://github.com/RonaldDeng/Rhine-Music-Demo/releases/tag/v0.1.1) 下载 `Rhine-Music-Demo-v0.1.1-macOS.zip`，完整解压到本地文件夹。
 2. 双击文件夹中的 **`启动音乐播放器.command`**。首次启动会联网执行 `npm ci`、构建界面，并自动打开默认浏览器；后续按需重建。
 3. 在播放器的“音乐库”中填写音乐文件夹的**绝对路径**，例如 `/Users/你的用户名/Music`，保存并扫描。扫描成功后界面会自动刷新。
 
@@ -66,7 +66,7 @@ npm run music -- --port 5175
 
 默认数据目录为工程旁的 **`../music-data-v3/`**，存放曲库路径配置、索引、封面缓存、流派规则与服务日志；歌曲仍从原路径读取。这些个人数据不包含在 GitHub 仓库或发布 ZIP 中。
 
-从本地 V3 升级时，先停止旧版音乐服务，把 `V0.1.0` 放在与原 V3 工程相同的父目录，即可继续使用旁边的 `music-data-v3`。不要同时运行两个服务写入同一个数据目录。移动工程时，也要保留原数据目录位置，或显式指定 `MUSIC_DATA_DIR`。
+从本地 V3 或 V0.1.0 升级时，先停止旧版音乐服务，把 `V0.1.1` 放在与原 V3 工程相同的父目录，即可继续使用旁边的 `music-data-v3`。不要同时运行两个服务写入同一个数据目录。移动工程时，也要保留原数据目录位置，或显式指定 `MUSIC_DATA_DIR`。
 
 较早版本使用的 `../music-data/` 可在停止旧服务后复用。在新版工程目录运行：
 
@@ -84,7 +84,7 @@ MUSIC_DATA_DIR="../music-data" bash "启动音乐播放器.command"
 
 当前不包含歌词、频谱、均衡器、在线搜歌或云同步。音乐模式未开放独立 360° 查看器、拆解和重组入口。高画质会增加渲染开销，帧率偏低时可在设置中降低画质或关闭景深，实际效果取决于设备和窗口尺寸。
 
-本次发布的验证范围为生产构建与静态检查，结果见 [发布检查](docs/RELEASE-V0.1.0.md)；未重新进行浏览器、真实设备、全格式播放或在线资料覆盖率验收。
+本次发布的验证范围为生产构建与静态检查，结果见 [发布检查](docs/RELEASE-V0.1.1.md)；未重新进行浏览器、真实设备、全格式播放或在线资料覆盖率验收。
 
 ## 开发与来源
 

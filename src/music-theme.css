@@ -49,10 +49,20 @@
   inherits: true;
   initial-value: 0;
 }
+@property --music-side-veil-opacity {
+  syntax: "<number>";
+  inherits: true;
+  initial-value: 1;
+}
 
 .music-app {
   --music-status-ink: #74786f;
   --music-night-mix: 0;
+  --music-side-veil-opacity: 1;
+}
+/* The side reading veil fades away when album text moves below the scene. */
+.music-app[data-layout="portrait"] {
+  --music-side-veil-opacity: 0;
 }
 .music-app[data-theme="night"] {
   --music-status-ink: #e9eef2;
@@ -74,7 +84,8 @@
     --page-bg,
     --veil,
     --music-status-ink,
-    --music-night-mix;
+    --music-night-mix,
+    --music-side-veil-opacity;
   transition-duration: 650ms;
   transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
 }
@@ -106,9 +117,9 @@
     linear-gradient(
       90deg,
       transparent 24%,
-      rgba(5, 13, 25, 0.28) 48%,
-      rgba(5, 13, 25, 0.78) 70%,
-      rgba(5, 13, 25, 0.84)
+      rgba(5, 13, 25, calc(0.28 * var(--music-side-veil-opacity))) 48%,
+      rgba(5, 13, 25, calc(0.78 * var(--music-side-veil-opacity))) 70%,
+      rgba(5, 13, 25, calc(0.84 * var(--music-side-veil-opacity)))
     ),
     linear-gradient(
       180deg,
