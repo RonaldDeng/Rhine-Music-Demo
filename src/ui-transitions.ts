@@ -11,6 +11,8 @@ export class SurfaceTransition {
     private panel?: HTMLElement,
     private enterDuration = 300,
     private exitDuration = 200,
+    private direction: "up" | "right" = "up",
+    private enterEasing = enterEase,
   ) {}
 
   show(reduced: boolean) {
@@ -37,7 +39,7 @@ export class SurfaceTransition {
     const opacity = hidden ? "0" : getComputedStyle(this.root).opacity;
     const transform = this.panel
       ? hidden
-        ? "translateY(12px)"
+        ? this.direction === "right" ? "translateX(36px)" : "translateY(12px)"
         : getComputedStyle(this.panel).transform
       : undefined;
     this.animations.forEach((animation) => animation.cancel());
@@ -58,7 +60,7 @@ export class SurfaceTransition {
     }
     const options: KeyframeAnimationOptions = {
       duration: show ? this.enterDuration : this.exitDuration,
-      easing: show ? enterEase : exitEase,
+      easing: show ? this.enterEasing : exitEase,
       fill: "both",
     };
     const fade = this.root.animate(
@@ -71,7 +73,9 @@ export class SurfaceTransition {
         this.panel.animate(
           [
             { transform },
-            { transform: show ? "translateY(0)" : "translateY(8px)" },
+            { transform: this.direction === "right"
+              ? show ? "translateX(0)" : "translateX(52px)"
+              : show ? "translateY(0)" : "translateY(8px)" },
           ],
           options,
         ),

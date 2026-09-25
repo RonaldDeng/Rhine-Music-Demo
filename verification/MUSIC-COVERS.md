@@ -1,5 +1,7 @@
 # Music cover integration
 
+> 历史开发记录：以下范围、参数与验证结论对应文中所述阶段，不代表 V0.1.0 本次已复验；发布版差异见 [验证记录说明](README.md)。
+
 Validated 2026-09-09 in the local Codex browser, 1280 × 720.
 
 - `setMusicAlbums(albums, genres)` replaces the display index. `scene.refreshLibrary(index)` rebuilds card ownership after a membership, genre-layout, or artwork change. Metadata-only UI updates do not need to reset the scene.

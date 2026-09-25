@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { COVER_SIZE, containCover } from "./cover-atlas";
 import type { MusicAlbum } from "./music-types";
+import { createAlbumPrintMaterial } from "./music-model.ts";
 
 /** A viewer owns its own print and texture, independent of the array's selection. */
 export class ViewerAlbumCover {
@@ -16,22 +17,18 @@ export class ViewerAlbumCover {
     anisotropy = 1,
   ) {
     this.canvas.width = 1024;
-    this.canvas.height = 768;
+    this.canvas.height = 1024;
     this.paintPlaceholder();
     this.texture = new THREE.CanvasTexture(this.canvas);
     this.texture.colorSpace = THREE.SRGBColorSpace;
     this.texture.anisotropy = Math.min(8, anisotropy);
     this.mesh = new THREE.Mesh(
       new THREE.PlaneGeometry(COVER_SIZE.width, COVER_SIZE.height).translate(
-        0,
+        COVER_SIZE.x,
         COVER_SIZE.y,
         COVER_SIZE.z,
       ),
-      new THREE.MeshBasicMaterial({
-        map: this.texture,
-        alphaTest: 0.025,
-        toneMapped: false,
-      }),
+      createAlbumPrintMaterial(this.texture),
     );
     this.mesh.name = "Album cover print";
     this.mesh.userData.albumCover = true;

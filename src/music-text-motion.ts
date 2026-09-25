@@ -6,8 +6,10 @@ import type { ArchiveNavigation } from "./archive-loop";
 
 type SelectionText = {
   number: number;
+  total: number;
   code: number;
   genreIndex: number;
+  genresTotal: number;
   genre: string;
   genreName: string;
   format: string;
@@ -119,8 +121,10 @@ export function setupMusicTextMotion(root: HTMLElement) {
   };
   const numbers = {
     number: number("selection-number"),
+    total: number("selection-total"),
     code: number("selection-code-number", 3),
     genreIndex: number("genre-index"),
+    genresTotal: number("genre-total"),
   };
   const texts = {
     genre: text("selection-genre"),
@@ -159,11 +163,16 @@ export function setupMusicTextMotion(root: HTMLElement) {
         value: value.number,
         direction: axis === "row" ? direction : "auto",
       });
+      numbers.total.update({
+        value: value.total,
+        direction: axis === "lane" ? direction : "auto",
+      });
       numbers.code.update({ value: value.code, direction });
       numbers.genreIndex.update({
         value: value.genreIndex,
         direction: axis === "lane" ? direction : "auto",
       });
+      numbers.genresTotal.update({ value: value.genresTotal, direction: "auto" });
       for (const key of Object.keys(texts) as (keyof typeof texts)[])
         texts[key].update({ text: value[key] });
     },

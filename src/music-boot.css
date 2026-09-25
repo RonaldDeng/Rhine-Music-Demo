@@ -1,10 +1,22 @@
-/* Player controls use 20 px SVG icons. The cinematic SVGs must instead fill
-   their original measured containers before the one 1920 × 1080 stage scale. */
-.music-boot-stage .boot-logo > svg,
-.music-boot-stage .welcome-logo > svg,
-.music-boot-stage .scan > svg,
-.music-boot-stage .boot-background > svg {
-  display: block;
-  width: 100%;
-  height: 100%;
+.music-boot-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 900;
+  overflow: hidden;
+  background: transparent;
+  outline: none;
+}
+.music-boot-skip {
+  position: absolute;
+  right: 40px;
+  top: 33px;
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  background: var(--veil);
+  color: var(--ink);
+  font-size: 12px;
+  cursor: pointer;
+}
+@media (max-width: 700px) {
+  .music-boot-skip { top: 23px; right: 20px; font-size: 11px; }
 }

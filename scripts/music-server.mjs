@@ -78,7 +78,7 @@ async function serveFile(request, response, descriptor, { cache = 'no-cache' } =
 }
 
 export async function createMusicServer({
-  dataDir = process.env.MUSIC_DATA_DIR ?? path.join(PROJECT_DIR, '..', 'music-data'),
+  dataDir = process.env.MUSIC_DATA_DIR ?? path.join(PROJECT_DIR, '..', 'music-data-v3'),
   distDir = path.join(PROJECT_DIR, 'dist'),
   defaultRoots = process.env.MUSIC_ROOTS ? process.env.MUSIC_ROOTS.split(path.delimiter).filter(Boolean) : [],
   store: providedStore,

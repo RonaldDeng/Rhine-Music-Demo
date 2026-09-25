@@ -19,10 +19,21 @@ __pycache__/
 
 # Machine-local music library data and development state
 .DS_Store
-music-data/
+music-data*/
 /library-index.json
 /genre-rules.json
 /artwork/
 *.log
 .codex/
 .agents/
+
+# Local sessions, release archives, and optional library overrides
+.Rhistory
+.RData
+/config.json
+/launcher.lock
+*.backup
+*.zip
+*.tar.gz
+verification/music-v2/
+art/archive-studio.png

@@ -1,10 +1,10 @@
 import * as THREE from "three";
 import type { MusicSelectionLighting } from "./music-lighting";
 import type { ArchiveRecord } from "./data";
+import { MUSIC_COVER, createAlbumPrintMaterial } from "./music-model.ts";
 
-// Square paper sits behind the CD front glass (front inner surface z=0.0825).
-// The spine has its own strip; contain mapping preserves every cover aspect ratio.
-export const COVER_SIZE = { width: 3.35, height: 3.35, x: 0.16, y: 1.85, z: 0.075 };
+// Print on the glass surface. No transmitting/frosted layer sits over the image.
+export const COVER_SIZE = MUSIC_COVER;
 type CoverImage = { source: HTMLCanvasElement; width: number; height: number };
 
 export function containCover(
@@ -81,7 +81,7 @@ function paintCover(
 /** One fixed-size atlas for the visible pool, regardless of total library size. */
 export class CoverAtlas {
   readonly array: THREE.InstancedMesh;
-  readonly selected: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial | THREE.MeshStandardMaterial>;
+  readonly selected: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial>;
   private readonly atlasCanvas = document.createElement("canvas");
   private readonly selectedCanvas = document.createElement("canvas");
   private readonly tileCanvas = document.createElement("canvas");
@@ -97,7 +97,7 @@ export class CoverAtlas {
   private readonly tileWidth: number;
   private readonly tileHeight: number;
 
-  constructor(count: number, maxTextureSize: number, anisotropy: number, lit = false, lighting?: MusicSelectionLighting) {
+  constructor(count: number, maxTextureSize: number, anisotropy: number, _lit = false, _lighting?: MusicSelectionLighting) {
     this.rows = Math.ceil(count / this.columns);
     this.tileWidth = Math.min(
       256,
@@ -141,13 +141,9 @@ export class CoverAtlas {
       "coverTile",
       new THREE.InstancedBufferAttribute(tileOffsets, 4),
     );
-    // The same matte paper responds to the key light in the shelf, on the
-    // selected album and in returning snapshots. Texture/contain mapping stays
-    // identical, so changing selection does not change the cover's proportions.
-    const printMaterial = (map: THREE.Texture) => lit
-      ? new THREE.MeshStandardMaterial({ map, alphaTest: 0.025, roughness: 0.88, metalness: 0, envMapIntensity: 0.25 })
-      : new THREE.MeshBasicMaterial({ map, alphaTest: 0.025, toneMapped: false });
-    const material = printMaterial(this.atlas);
+    // Artwork uses the same independent, unlit surface in the shelf, selection
+    // and outgoing snapshots. Glass highlights never wash out printed colours.
+    const material = createAlbumPrintMaterial(this.atlas);
     material.onBeforeCompile = (shader) => {
       shader.vertexShader = "attribute vec4 coverTile;\n" + shader.vertexShader;
       shader.vertexShader = shader.vertexShader.replace(
@@ -155,32 +151,25 @@ export class CoverAtlas {
         "#include <uv_vertex>\nvMapUv = coverTile.xy + uv * coverTile.zw;",
       );
     };
-    const atlasCompile = material.onBeforeCompile;
-    material.onBeforeCompile = (shader, renderer) => {
-      atlasCompile.call(material, shader, renderer);
-      lighting?.shade(shader, "Album_Print");
-    };
-    material.customProgramCacheKey = () => `album-cover-atlas-v2-${Boolean(lighting)}`;
+    material.customProgramCacheKey = () => "album-cover-surface-atlas-v3";
     this.array = new THREE.InstancedMesh(geometry, material, count);
     this.array.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     this.array.frustumCulled = false;
     this.array.visible = false;
     this.array.name = "Album cover atlas";
-    this.array.receiveShadow = lit;
+    this.array.receiveShadow = false;
     this.selected = new THREE.Mesh(
       new THREE.PlaneGeometry(COVER_SIZE.width, COVER_SIZE.height).translate(
         COVER_SIZE.x,
         COVER_SIZE.y,
         COVER_SIZE.z,
       ),
-      printMaterial(this.selectedTexture),
+      createAlbumPrintMaterial(this.selectedTexture),
     );
-    this.selected.material.onBeforeCompile = (shader) => lighting?.shade(shader, "Album_Print");
-    this.selected.material.customProgramCacheKey = () => `album-cover-selected-v2-${Boolean(lighting)}`;
     this.selected.userData.albumCover = true;
     this.selected.visible = false;
     this.selected.name = "Selected album cover";
-    this.selected.receiveShadow = lit;
+    this.selected.receiveShadow = false;
   }
 
   private loadImage(url?: string) {

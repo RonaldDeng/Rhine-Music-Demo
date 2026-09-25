@@ -6,6 +6,7 @@ export type ArchiveNavigation =
 
 export const LOOP_COLUMNS = 9;
 export const LOOP_ROWS = 32;
+export const MUSIC_LOOP_ROWS = 48;
 export const COLUMN_SPACING = 5.2;
 export const ROW_SPACING = 0.62;
 const POOL_LANES = [0, 1, 2, 3, 4, -2, -1, 5, 6];
@@ -55,23 +56,24 @@ export function selectionCell(
   };
 }
 
-// Preserve the reference animation's original first 160 instances. The four
-// extra columns form a hidden margin on either side during interactive use.
-export function poolCell(index: number): ArchiveCell {
+// Default to the original 32-row reference. Larger display pools extend both
+// ends without changing logical archive rows or the array's 15.5-row center.
+export function poolCell(index: number, rows = LOOP_ROWS): ArchiveCell {
   return {
-    lane: POOL_LANES[Math.floor(index / LOOP_ROWS)],
-    row: index % LOOP_ROWS,
+    lane: POOL_LANES[Math.floor(index / rows)],
+    row: index % rows - (rows - LOOP_ROWS) / 2,
   };
 }
 
-export function visibleCell(index: number, center: ArchiveCell): ArchiveCell {
+export function visibleCell(index: number, center: ArchiveCell, rows = LOOP_ROWS): ArchiveCell {
+  const cell = poolCell(index, rows);
   return {
     lane: nearestOccurrence(
-      POOL_LANES[Math.floor(index / LOOP_ROWS)],
+      cell.lane,
       center.lane,
       LOOP_COLUMNS,
     ),
-    row: nearestOccurrence(index % LOOP_ROWS, center.row, LOOP_ROWS),
+    row: nearestOccurrence(cell.row, center.row, rows),
   };
 }
 

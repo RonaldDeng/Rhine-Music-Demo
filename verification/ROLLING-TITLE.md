@@ -1,5 +1,7 @@
 # 档案文字滚动与刻度过渡
 
+> 历史开发记录：以下范围、参数与验证结论对应文中所述阶段，不代表 V0.1.0 本次已复验；发布版差异见 [验证记录说明](README.md)。
+
 用户要求标题快切采用类似已有数字滚动的效果。主界面复用 `@kitlangton/rolling-number` 0.4.1 的 `createRollingText`，移除旧 `ScrubTitle` 和黑条样式。
 
 - 标题与编号共用 460ms 运动配置。标题采用 `transition: direct`、`stagger: none`，各字同时启动，宽度跟随同一引擎的布局弹簧。

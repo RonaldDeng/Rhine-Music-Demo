@@ -1,6 +1,7 @@
 import type { MusicTrack } from "./music-types";
 
 export interface MusicPlayerState {
+  transport: "idle" | "loading" | "playing" | "paused" | "error";
   currentTrack: MusicTrack | null;
   queue: readonly MusicTrack[];
   currentIndex: number;
@@ -19,7 +20,7 @@ export interface MusicPlayerState {
 }
 
 type Listener = (state: MusicPlayerState) => void;
-type Transport = "idle" | "loading" | "playing" | "paused" | "error";
+type Transport = MusicPlayerState["transport"];
 type Fade = { timer: ReturnType<typeof setTimeout>; finish: () => void };
 
 const unit = (value: number) => Math.max(0, Math.min(1, value));
@@ -28,7 +29,7 @@ const seconds = (value: number) =>
 
 /** Music transport is independent from TerminalAudio and the Three.js scene lifecycle. */
 export class MusicPlayer {
-  private value: MusicPlayerState;
+  private value: Omit<MusicPlayerState, "transport">;
   private listeners = new Set<Listener>();
   private song?: HTMLAudioElement;
   private readonly bgm: HTMLAudioElement;
@@ -74,7 +75,7 @@ export class MusicPlayer {
   }
 
   get state(): MusicPlayerState {
-    return { ...this.value, queue: [...this.value.queue] };
+    return { ...this.value, transport: this.transport, queue: [...this.value.queue] };
   }
 
   subscribe(listener: Listener): () => void {
@@ -372,10 +373,10 @@ export class MusicPlayer {
       /^(DSD|DSF|DFF)$/i.test(track.format) ||
       /\.(dsf|dff)$/i.test(track.relativePath)
     ) {
-      return "DSD 曲目需要支持 DSD 的 foobar2000 及相应解码组件；当前浏览器预览未连接 foobar2000，无法播放此曲目。";
+      return "当前版本暂不支持 DSF / DFF（DSD）播放，请选择浏览器支持的音频文件。";
     }
     if (!track.browserPlayable)
-      return `${track.format} 无法在当前浏览器预览中播放，请使用配置好解码组件的 foobar2000。`;
+      return `${track.format} 无法在当前浏览器中播放，请选择浏览器支持的音频文件。`;
     return null;
   }
 
@@ -388,7 +389,7 @@ export class MusicPlayer {
       return "音频读取失败：请检查本地服务和音乐文件是否仍然可用。";
     if (name === "AbortError") return "歌曲播放被中断，请点击播放按钮重试。";
     if (/M4A|ALAC/i.test(`${track.format} ${track.codec ?? ""}`)) {
-      return "此 M4A / ALAC 文件未能由当前浏览器解码，或文件已不可用。请确认文件后尝试支持该编码的 foobar2000；本预览未连接 foobar2000。";
+      return "此 M4A / ALAC 文件未能由当前浏览器解码，或文件已不可用。请检查原文件，或尝试支持该编码的浏览器。";
     }
     if (
       media?.code === 3 ||

@@ -525,6 +525,33 @@
   font-size: 9px;
   letter-spacing: 0;
 }
+.detail-album-navigation {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+/* Clear surface prints retain their colours; keep reading areas independent. */
+.music-browse::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent 34%, var(--veil) 57%, var(--page-bg) 96%);
+}
+.music-app[data-layout="portrait"] .music-browse::before {
+  background: linear-gradient(180deg, transparent 28%, var(--page-bg) 62%);
+}
+.music-app[data-layout="portrait"] .music-detail::before {
+  content: "";
+  position: absolute;
+  inset: 46% 0 0;
+  pointer-events: none;
+  background: linear-gradient(180deg, transparent, var(--page-bg) 34px);
+}
+.music-app[data-layout="desktop"] #album-detail-content,
+.music-app[data-layout="compact"] #album-detail-content {
+  left: 52%;
+}
 #album-detail-content > h1 {
   font-size: clamp(25px, 2.5vw, 39px);
   line-height: 1.22;
@@ -622,7 +649,7 @@
 .track-row {
   width: 100%;
   display: grid;
-  grid-template-columns: 23px minmax(0, 1fr) 40px 38px 14px;
+  grid-template-columns: 23px minmax(0, 1fr) 40px 38px;
   gap: 9px;
   align-items: center;
   text-align: left;
@@ -674,15 +701,6 @@
   font-variant-numeric: tabular-nums;
   text-align: right;
   color: var(--muted);
-}
-.track-play {
-  font-size: 12px;
-  text-align: right;
-  opacity: 0;
-}
-.track-row:hover .track-play,
-.track-row.playing .track-play {
-  opacity: 1;
 }
 .track-row.playing {
   color: var(--accent);
@@ -1423,7 +1441,7 @@
   }
   .track-row {
     gap: 6px;
-    grid-template-columns: 20px minmax(0, 1fr) 30px 34px 10px;
+    grid-template-columns: 20px minmax(0, 1fr) 30px 34px;
   }
   .track-name strong {
     font-size: 10px;
@@ -1676,7 +1694,7 @@
   }
   .track-row {
     padding: 11px 0;
-    grid-template-columns: 21px minmax(0, 1fr) 31px 34px 12px;
+    grid-template-columns: 21px minmax(0, 1fr) 31px 34px;
   }
   .music-empty {
     left: 25px;
@@ -1747,6 +1765,33 @@
 .minimal-transport svg {
   width: 17px;
   height: 17px;
+}
+#play-pause {
+  position: relative;
+}
+#play-pause .transport-glyph {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  transition:
+    opacity 180ms ease,
+    transform 180ms ease;
+}
+#play-pause .transport-pause,
+#play-pause[aria-pressed="true"] .transport-play {
+  opacity: 0;
+  transform: scale(0.7);
+}
+#play-pause .transport-play,
+#play-pause[aria-pressed="true"] .transport-pause {
+  opacity: 1;
+  transform: scale(1);
+}
+.music-app.reduce-motion #play-pause .transport-glyph {
+  transition: none;
 }
 .music-app .document-redaction-ink {
   background: var(--ink);
@@ -2202,4 +2247,49 @@
 }
 .music-title-reel-translation {
   color: var(--muted);
+}
+
+/* Give the selected album more space from the array without narrowing its text. */
+@media (min-width: 1101px) {
+  .music-app:not([data-layout="portrait"]) .album-callout {
+    left: 61%;
+    right: max(24px, 2.2%);
+  }
+}
+
+/* Keep a third of the portrait view for album text, above the measured ruler. */
+.music-app[data-layout="portrait"] {
+  --portrait-callout-height: min(
+    max(210px, 33.333vh),
+    calc(100vh - var(--callout-bottom, 135px) - 150px)
+  );
+  --portrait-callout-top: calc(
+    100vh - var(--callout-bottom, 135px) - var(--portrait-callout-height)
+  );
+}
+.music-app[data-layout="portrait"] .album-callout {
+  top: auto;
+  bottom: var(--callout-bottom, 135px);
+  left: clamp(23px, 4vw, 42px);
+  right: clamp(23px, 4vw, 42px);
+  height: var(--portrait-callout-height);
+  max-width: none;
+  margin-left: -12px;
+  padding: 10px 12px;
+  background: linear-gradient(90deg, var(--veil), transparent);
+}
+.music-app[data-layout="portrait"] .music-browse::before {
+  background: linear-gradient(
+    180deg,
+    transparent calc(var(--portrait-callout-top) - 12vh),
+    var(--veil) calc(var(--portrait-callout-top) + 7vh),
+    var(--page-bg) calc(var(--portrait-callout-top) + var(--portrait-callout-height))
+  );
+}
+@media (max-height: 600px) {
+  .music-app[data-layout="portrait"] .album-callout {
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+  }
 }

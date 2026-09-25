@@ -1,8 +1,10 @@
 import * as THREE from "three";
+import { MUSIC_MODEL } from "./music-model.ts";
+import { ThemeTransition } from "./theme-transition.ts";
 
 /** Side key plus a bounded approximation of light scattered inside the CD shell. */
 export class MusicSelectionLighting {
-  readonly spot = new THREE.SpotLight("#ffe3b2", 180, 24, 0.25, 0.9, 2);
+  readonly spot = new THREE.SpotLight("#ffe3b2", 180 * 64, 0, 0.32, 0.95, 2);
   private readonly aim = new THREE.Vector3();
   private readonly anchor = new THREE.Vector3();
   private readonly offset = new THREE.Vector3();
@@ -12,6 +14,13 @@ export class MusicSelectionLighting {
   private readonly column = { value: new THREE.Vector3() };
   private readonly scatterColor = { value: new THREE.Color("#ffdba3") };
   private readonly scatterStrength = { value: 1 };
+  private readonly shellBounds = { value: new THREE.Vector4(
+    MUSIC_MODEL.center.x - MUSIC_MODEL.width / 2,
+    MUSIC_MODEL.center.y - MUSIC_MODEL.height / 2,
+    MUSIC_MODEL.center.y + MUSIC_MODEL.height / 2,
+    1 / MUSIC_MODEL.height,
+  ) };
+  private readonly edgeFalloff = { value: new THREE.Vector2(1.7, 24) };
 
   constructor(private readonly scene: THREE.Scene) {
     this.spot.name = "Selected album soft key";
@@ -22,18 +31,20 @@ export class MusicSelectionLighting {
     scene.add(this.spot, this.spot.target);
   }
 
-  setTheme(theme: "day" | "night" | "dusk", key: THREE.DirectionalLight) {
+  setTheme(theme: "day" | "night" | "dusk", key: THREE.DirectionalLight, transition?: ThemeTransition) {
     const night = theme === "night";
-    this.scene.environmentIntensity = night ? 0.16 : 0.25;
-    key.intensity = night ? 0.30 : 0.45;
+    const targets = transition ?? new ThemeTransition();
+    targets.number(this.scene, "environmentIntensity", night ? 0.16 : 0.25);
+    targets.number(key, "intensity", night ? 0.30 : 0.45);
     for (const child of this.scene.children) {
-      if (child instanceof THREE.HemisphereLight) child.intensity = night ? 0.21 : 0.32;
-      if (child instanceof THREE.DirectionalLight && child !== key) child.intensity = 0.045;
+      if (child instanceof THREE.HemisphereLight) targets.number(child, "intensity", night ? 0.21 : 0.32);
+      if (child instanceof THREE.DirectionalLight && child !== key) targets.number(child, "intensity", 0.045);
     }
-    this.spot.color.set(night ? "#dbe9ff" : "#ffe3b2");
-    this.spot.intensity = night ? 130 : 180;
-    this.scatterColor.value.set(night ? "#cee5ff" : "#ffdba3");
-    this.scatterStrength.value = night ? 0.72 : 1;
+    targets.color(this.spot.color, night ? "#dbe9ff" : "#ffe3b2");
+    targets.number(this.spot, "intensity", (night ? 130 : 180) * 64);
+    targets.color(this.scatterColor.value, night ? "#cee5ff" : "#ffdba3");
+    targets.number(this.scatterStrength, "value", night ? 0.72 : 1);
+    if (!transition) targets.finish();
   }
 
   /** Shared by instances, the lifted CD and returning copies; no extra render pass.
@@ -41,9 +52,14 @@ export class MusicSelectionLighting {
    * scattering term approximates that transport from the spine into the panel.
    */
   shade(shader: THREE.WebGLProgramParametersWithUniforms, surface: string) {
+    // Covers are independent surface prints. Keep this guard even when a
+    // caller accidentally registers them with the shell lighting controller.
+    if (surface === "Album_Print") return;
     shader.uniforms.musicLightColumn = this.column;
     shader.uniforms.musicScatterColor = this.scatterColor;
     shader.uniforms.musicScatterStrength = this.scatterStrength;
+    shader.uniforms.musicShellBounds = this.shellBounds;
+    shader.uniforms.musicEdgeFalloff = this.edgeFalloff;
     const declarations = `
       varying vec3 vMusicLocal;
       varying vec3 vMusicOrigin;
@@ -62,33 +78,45 @@ export class MusicSelectionLighting {
       uniform vec3 musicLightColumn;
       uniform vec3 musicScatterColor;
       uniform float musicScatterStrength;
+      // left X, bottom Y, top Y, inverse height — shared with the real shell.
+      uniform vec4 musicShellBounds;
+      uniform vec2 musicEdgeFalloff;
     ` + shader.fragmentShader;
     const glass = surface === "Frosted_Polymer";
     const spine = surface === "Ivory_Edges";
     shader.fragmentShader = shader.fragmentShader.replace("#include <opaque_fragment>", `
       float laneDistance = abs(vMusicOrigin.x - musicLightColumn.x);
       float laneRadius = laneDistance / 3.2;
-      float laneLight = exp(-laneRadius * laneRadius * laneRadius * laneRadius);
+      float coreLight = exp(-laneRadius * laneRadius * laneRadius * laneRadius);
+      float spillRadius = laneDistance / 7.2;
+      float spillLight = exp(-spillRadius * spillRadius * spillRadius * spillRadius);
+      // Both neighboring genre columns receive a broad, weaker wash. Two lanes
+      // away it has almost vanished; only nearby rows carry the cross-shelf band.
+      float laneLight = 0.58 * coreLight + 0.42 * spillLight;
       float rowDistance = (vMusicOrigin.z - musicLightColumn.z) / 5.5;
       float rowLight = exp(-rowDistance * rowDistance);
       float hotDistance = (vMusicOrigin.z - musicLightColumn.z) / 1.1;
       float hotLight = exp(-hotDistance * hotDistance);
       // The reference has a warm local ribbon, not uniformly glowing spines.
-      float guidedLight = laneLight * mix(0.12, 1.0, rowLight);
-      outgoingLight *= mix(0.94, 1.08, guidedLight);
+      float neighborDistance = (vMusicOrigin.z - musicLightColumn.z) / 2.4;
+      float neighborLight = exp(-neighborDistance * neighborDistance);
+      float guidedLight = 0.58 * coreLight * mix(0.12, 1.0, rowLight)
+                        + 0.42 * spillLight * neighborLight;
+      outgoingLight *= mix(0.96, 1.04, guidedLight);
       ${glass || spine ? `
-        float fromSpine = max(0.0, vMusicLocal.x + 1.9);
-        float edgeTransport = exp(-fromSpine * 1.35);
-        float lowerLight = mix(1.0, 0.62, clamp(vMusicLocal.y / 3.7, 0.0, 1.0));
-        float topRim = exp(-max(0.0, 3.7 - vMusicLocal.y) * 22.0);
+        float fromSpine = max(0.0, vMusicLocal.x - musicShellBounds.x);
+        float edgeTransport = exp(-fromSpine * musicEdgeFalloff.x);
+        float panelHeight = clamp((vMusicLocal.y - musicShellBounds.y) * musicShellBounds.w, 0.0, 1.0);
+        float lowerLight = mix(1.0, 0.62, panelHeight);
+        float topRim = exp(-max(0.0, musicShellBounds.z - vMusicLocal.y) * musicEdgeFalloff.y);
         float grazing = 1.0 - clamp(abs(dot(normal, normalize(vViewPosition))), 0.0, 1.0);
-        float edgeScatter = ${spine ? '0.34' : '0.17'} * edgeTransport + ${spine ? '0.055' : '0.008'};
+        float edgeScatter = ${spine ? '0.30' : '0.14'} * edgeTransport + ${spine ? '0.016' : '0.003'};
         outgoingLight += musicScatterColor * musicScatterStrength * guidedLight * edgeScatter * lowerLight;
         // A narrow glint at the top and the lit spine changes with viewing angle.
-        // The cover interior receives very little additive light, preserving ink.
+        // Warm light stays on the glass; the independent cover has no such term.
         float ribbon = topRim * (0.22 + 0.78 * edgeTransport) + ${spine ? '0.18' : '0.035'} * edgeTransport * grazing;
         outgoingLight += musicScatterColor * musicScatterStrength * laneLight * hotLight * ribbon * 0.8;
-      ` : surface === "Album_Print" ? `outgoingLight += diffuseColor.rgb * guidedLight * 0.20;` : ''}
+      ` : ''}
       #include <opaque_fragment>
     `);
   }
@@ -104,7 +132,7 @@ export class MusicSelectionLighting {
     }
   }
 
-  update(model: THREE.Object3D, camera: THREE.Camera, dt: number, visible: boolean, reduced: boolean) {
+  update(model: THREE.Object3D, camera: THREE.Camera, dt: number, visible: boolean, reduced: boolean, cinematic = false) {
     this.spot.visible = visible;
     if (!visible) {
       this.initialized = false;
@@ -113,8 +141,14 @@ export class MusicSelectionLighting {
     // Use the rendered world position, never a library row/index: the array
     // scrolls and periodically rebases its coordinates during infinite browsing.
     model.updateWorldMatrix(true, false);
-    this.aim.set(-1.95, 2.3, 0).applyMatrix4(model.matrixWorld);
-    if (!this.initialized || reduced) {
+    this.aim.set(
+      MUSIC_MODEL.center.x - MUSIC_MODEL.width / 2 + 0.14,
+      MUSIC_MODEL.center.y + MUSIC_MODEL.height * 0.12,
+      MUSIC_MODEL.center.z,
+    ).applyMatrix4(model.matrixWorld);
+    if (!this.initialized || reduced || cinematic) {
+      // Opening choreography already eases its track/camera: another spring
+      // would leave the light behind during the large initial array translation.
       this.anchor.copy(this.aim);
       this.column.value.copy(model.position);
       this.anchorVelocity.set(0, 0, 0);
@@ -130,7 +164,10 @@ export class MusicSelectionLighting {
     this.spot.target.position.copy(this.anchor);
     // Camera-local -X/-Y: light enters from the lower-left of the picture and
     // grazes the spine, rather than illuminating the album face from above.
-    this.offset.set(-6, -2.2, 4.5).applyQuaternion(camera.quaternion);
+    // The old near-field source sat inside a neighboring lane and burned a
+    // white spot into its nearest corner. Move it eight times farther away,
+    // outside the pool, and compensate intensity by distance squared above.
+    this.offset.set(-6, -2.2, 4.5).multiplyScalar(8).applyQuaternion(camera.quaternion);
     this.spot.position.copy(this.anchor).add(this.offset);
   }
 }

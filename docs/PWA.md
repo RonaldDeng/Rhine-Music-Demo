@@ -1,3 +1,5 @@
+> 这是上游档案终端的历史 PWA 说明。V0.1.0 音乐播放器只支持在 macOS 本机运行，不提供移动端或云端曲库服务；当前运行方式见 [README](../README.md)。
+
 # 主屏幕安装与离线使用
 
 正式地址：[rhine.lubeiluchen.cc](https://rhine.lubeiluchen.cc/)。
@@ -24,7 +26,7 @@
 
 ## 开发与 Vercel
 
-`npm run build` 生成静态站点和带内容版本号的 Service Worker，输出在 `dist`。现有 Vercel 项目沿用 GitHub 自动部署，配置见 `vercel.json`。Service Worker、manifest 与构建清单使用重新验证缓存头。离线功能只在正式构建的 HTTPS 或 localhost 环境注册，`npm run dev` 不注册。
+`npm run build` 生成静态站点和带内容版本号的 Service Worker，输出在 `dist`。上游档案终端使用 Vercel 部署；V0.1.0 本地音乐发布不包含该部署配置。Service Worker、manifest 与构建清单使用重新验证缓存头。离线功能只在正式构建的 HTTPS 或 localhost 环境注册，`npm run dev` 不注册。
 
 本地验证：运行 `npm run build`，再运行 `npm run preview`。浏览器测试见 `scripts/check-pwa.mjs`，需要本机可用的 Playwright 与 Chrome；可通过 `PLAYWRIGHT_MODULE` 指定已有 Playwright 模块路径。
 

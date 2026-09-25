@@ -169,7 +169,11 @@ export function setupMusicTitleLayout(root: HTMLElement) {
     const navRect = navigation.getBoundingClientRect();
     const bottomGap = rootRect.bottom - navRect.top + 28;
     root.style.setProperty("--callout-bottom", `${bottomGap}px`);
-    const available = callout.clientHeight;
+    const calloutStyle = getComputedStyle(callout);
+    const available =
+      callout.clientHeight -
+      Number.parseFloat(calloutStyle.paddingTop) -
+      Number.parseFloat(calloutStyle.paddingBottom);
     const base = Number.parseFloat(getComputedStyle(title).fontSize);
     const min = Math.min(base, innerWidth <= 700 ? 18 : 20);
     if (!text) return;

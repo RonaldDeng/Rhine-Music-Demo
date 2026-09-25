@@ -1,6 +1,6 @@
 {
   "name": "rhine-music-demo",
-  "version": "1.0.0",
+  "version": "0.1.0",
   "license": "MIT",
   "private": true,
   "type": "module",
@@ -16,7 +16,7 @@
     "format": "prettier --write src scripts index.html package.json tsconfig.json",
     "preview": "vite preview --host 127.0.0.1",
     "music": "node scripts/music-server.mjs",
-    "check:music": "node --test scripts/check-music-library.mjs scripts/check-album-introductions.mjs && node scripts/check-music-scene.mjs && node --experimental-strip-types --test scripts/check-music-player.mjs && node scripts/check-music-motion.mjs && node scripts/check-music-lighting.mjs"
+    "check:music": "node --test scripts/check-music-library.mjs scripts/check-album-introductions.mjs && node scripts/check-music-scene.mjs && node --experimental-strip-types --test scripts/check-music-player.mjs && node scripts/check-music-motion.mjs && node scripts/check-music-camera.mjs && node scripts/check-music-lighting.mjs && node scripts/check-music-presentation.mjs && node scripts/check-music-model.mjs"
   },
   "dependencies": {
     "@kitlangton/rolling-number": "0.4.1",
@@ -29,5 +29,8 @@
     "prettier": "^3.9.6",
     "typescript": "^5.9.3",
     "vite": "^7.3.1"
+  },
+  "engines": {
+    "node": ">=22.12.0"
   }
 }

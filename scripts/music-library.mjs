@@ -91,7 +91,7 @@ export function imageMime(file) {
   return ({ '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp' })[path.extname(file).toLowerCase()] ?? 'application/octet-stream'
 }
 
-/** A folder is one album. We never follow symlinks or modify audio/tag files. */
+/** Root-level files are singles; nested folders are albums. Source files stay read-only. */
 async function walkAlbums(root) {
   const folders = []
   const visit = async (folder) => {
@@ -106,7 +106,15 @@ async function walkAlbums(root) {
         const rank = (entry) => { const value = preferred.indexOf(path.parse(entry.name).name.toLowerCase()); return value < 0 ? 99 : value }
         return rank(a) - rank(b) || a.name.localeCompare(b.name)
       })
-      folders.push({ folder, tracks, cover: images[0] ? path.join(folder, images[0].name) : undefined })
+      if (folder === root) {
+        for (const file of tracks) {
+          const name = path.parse(file).name.normalize('NFC').toLocaleLowerCase()
+          const image = images.find((entry) => path.parse(entry.name).name.normalize('NFC').toLocaleLowerCase() === name)
+          folders.push({ folder, tracks: [file], singleFile: file, cover: image ? path.join(folder, image.name) : undefined })
+        }
+      } else {
+        folders.push({ folder, tracks, cover: images[0] ? path.join(folder, images[0].name) : undefined })
+      }
     }
     for (const entry of entries) if (entry.isDirectory() && !entry.name.startsWith('.')) await visit(path.join(folder, entry.name))
   }
@@ -114,6 +122,7 @@ async function walkAlbums(root) {
   return folders
 }
 
+const albumEntryId = (entry) => `album-${hash(entry.singleFile ?? entry.folder)}`
 const firstString = (value) => Array.isArray(value) ? text(value[0]) : text(value)
 const numberOrUndefined = (value) => Number.isFinite(value) && value > 0 ? value : undefined
 
@@ -245,7 +254,8 @@ export class MusicLibraryStore {
             // failures must never masquerade as deletions.
             const folders = await walkAlbums(root)
             const rootAlbums = []
-            for (const folder of folders) rootAlbums.push(await this.readAlbum(root, folder, previous.find((album) => album.folder === folder.folder)))
+            const previousById = new Map(previous.map((album) => [album.id, album]))
+            for (const folder of folders) rootAlbums.push(await this.readAlbum(root, folder, previousById.get(albumEntryId(folder))))
             nextAlbums.push(...rootAlbums)
             nextRoots.push({ path: root, status: 'online' })
           } catch (error) {
@@ -286,12 +296,14 @@ export class MusicLibraryStore {
   }
 
   async readAlbum(root, entry, previous) {
-    const id = `album-${hash(entry.folder)}`
-    let cover
+    const id = albumEntryId(entry)
+    let fileCover
     if (entry.cover) {
       const stat = await fs.stat(entry.cover)
-      cover = { path: entry.cover, mime: imageMime(entry.cover), version: hash(`${entry.cover}:${stat.size}:${stat.mtimeMs}`), embedded: false }
+      fileCover = { path: entry.cover, mime: imageMime(entry.cover), version: hash(`${entry.cover}:${stat.size}:${stat.mtimeMs}`), embedded: false }
     }
+    // A single owns its embedded artwork; a matching image is only a fallback.
+    let cover = entry.singleFile ? undefined : fileCover
     const tracks = []
     for (const file of entry.tracks) {
       const stat = await fs.stat(file)
@@ -351,13 +363,14 @@ export class MusicLibraryStore {
         _embeddedCover: cover && !embedded ? undefined : embedded,
       })
     }
+    cover ??= fileCover
     tracks.sort((a, b) => (a.discNumber ?? 1) - (b.discNumber ?? 1) || (a.trackNumber ?? 9999) - (b.trackNumber ?? 9999) || a.relativePath.localeCompare(b.relativePath, 'zh-CN', { numeric: true }))
     const first = tracks[0]
     const localGenres = unique(tracks.flatMap((track) => track._common.genres))
     const releaseId = tracks.map((track) => track._common.releaseId).find((value) => MBID.test(value))
     const releaseGroupId = tracks.map((track) => track._common.releaseGroupId).find((value) => MBID.test(value))
-    const title = first?._common.album || path.basename(entry.folder)
-    const artist = first?._common.albumartist || first?.artist || '未知艺术家'
+    const title = entry.singleFile ? first?.title || path.parse(entry.singleFile).name : first?._common.album || path.basename(entry.folder)
+    const artist = (entry.singleFile ? first?.artist : first?._common.albumartist || first?.artist) || '未知艺术家'
     const unchangedIdentity = previous && title === previous.title && artist === previous.artist && first?._common.year === previous.year && tracks.length === previous.tracks.length && (!releaseId || releaseId === previous.online?.releaseId)
     return {
       id, title, artist, year: first?._common.year,

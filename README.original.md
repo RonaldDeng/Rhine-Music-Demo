@@ -1,3 +1,5 @@
+> 以下为上游档案终端的历史说明，保留用于来源和资源追溯。当前音乐播放器的 macOS 安装、功能和支持范围以 [README.md](README.md) 为准。
+
 # RHINE LAB · ANALYSIS OS
 
 > 原版项目说明，保留用于来源与视觉对照。以下功能、截图、在线地址和下载包对应原版档案终端；本地音乐播放器请阅读 [README](README.md)。在当前工程查看原版使用 `?original=1&scene=archive`，本文旧调试路径需补上 `original=1`。
@@ -125,7 +127,7 @@ npm run dev
 
 打开终端显示的地址，通常为 `http://127.0.0.1:5173/`。如果端口被占用，以终端实际输出为准。
 
-Windows 用户安装 Node.js 并解压项目后，也可以双击 [`启动终端.cmd`](启动终端.cmd)：首次运行会安装依赖，然后启动本地服务并打开浏览器。
+Windows 用户安装 Node.js 并解压项目后，也可以双击 [`启动终端.cmd`](https://github.com/LBEILC/RhineLabUI/blob/5abab02367465d9189f4ae65bcb6f17fdb5938f7/%E5%90%AF%E5%8A%A8%E7%BB%88%E7%AB%AF.cmd)：首次运行会安装依赖，然后启动本地服务并打开浏览器。
 
 ### 构建与预览
 

@@ -85,6 +85,7 @@
         .some((a) => a.playState === "running");
     const value = (id) =>
       document.querySelector(`#${id} .rn-value`)?.textContent;
+    // Fictional titles, artists, and metadata for layout checks; no user library data.
     let state = {
       number: 1,
       code: 1,
@@ -92,7 +93,7 @@
       genre: "流行",
       genreName: "流行",
       format: "FLAC",
-      artist: "陈奕迅",
+      artist: "星图乐队",
       meta: "2001 / 10 首曲目 / 42:20",
     };
     const check = (ok, message) => {
@@ -109,16 +110,16 @@
     async function run() {
       report.textContent = "";
       await document.fonts.ready;
-      heading.update("一滴眼泪", false);
+      heading.update("云间旅程", false);
       text.update(state, false);
       heading.finish();
       text.finish();
       await pause(100);
       check(!moving(root), "首次载入直接显示，无入场乱滚");
-      heading.update("一滴眼泪", true);
+      heading.update("云间旅程", true);
       text.setEnabled(true);
       await pause(100);
-      heading.update("The Easy Ride", true);
+      heading.update("The Amber Path", true);
       text.update({ ...state, number: 2, code: 2 }, true, {
         axis: "row",
         direction: 1,
@@ -128,7 +129,7 @@
           moving(title) && moving(document.querySelector("#selection-number")),
       );
       check(
-        title.getAttribute("aria-label") === "The Easy Ride" &&
+        title.getAttribute("aria-label") === "The Amber Path" &&
           value("selection-number") === "02",
         "第一次切换标题与独立数字同时滚动",
       );
@@ -148,7 +149,7 @@
       );
       heading.update("准备中", true);
       await pause(70);
-      heading.update("陈奕迅48首选(48 Selected Songs of Eason Chan)", true);
+      heading.update("星图乐队48首选(48 Selected Songs by the Star Map Band)", true);
       text.update(
         {
           ...state,
@@ -168,18 +169,18 @@
       );
       check(
         title.getAttribute("aria-label") ===
-          "陈奕迅48首选(48 Selected Songs of Eason Chan)",
+          "星图乐队48首选(48 Selected Songs by the Star Map Band)",
         "中英文专辑全名保留",
       );
       check(
         [...title.querySelectorAll(".music-title-reel-main .rn-face")]
           .map((n) => n.textContent)
-          .join("") === "陈奕迅48首选",
+          .join("") === "星图乐队48首选",
         "主标题没有旧字残留",
       );
       const names = [
         "The Very Best Collection of Selected Songs from the Early Years and Live Concerts",
-        "陈奕迅48首选(48 Selected Songs of Eason Chan)",
+        "星图乐队48首选(48 Selected Songs by the Star Map Band)",
         "精选(An Extended English Album Subtitle with Several More Words to Verify Every Wrapped Line Remains Visible)",
         "这是一张特别长的中文专辑标题用于检查换行缩放并且不应侵入其他按钮",
       ];
@@ -217,7 +218,7 @@
         }
       }
       const longArtist =
-        "陈奕迅 / 王菲 / 张学友 / 林忆莲 / The Very Long Collaborative Orchestra and Guest Artists";
+        "星图乐队 / 微光合唱团 / 云间重奏组 / 海岸声景组 / The Very Long Collaborative Orchestra and Guest Artists";
       text.update({ ...state, artist: longArtist }, false);
       await pause(100);
       const artist = document.querySelector("#selection-artist");
@@ -237,22 +238,22 @@
       text.update(state, false);
       await pause(100);
       root.style.width = "min(100%, 1100px)";
-      heading.update("一滴眼泪", true);
+      heading.update("云间旅程", true);
       text.update({ ...state, number: 7 }, true);
       await frame();
       await frame();
       heading.finish();
       text.finish();
       check(!moving(root), "减少动态或进入详情会立即结束文字滚动");
-      heading.update("一滴眼泪", true);
+      heading.update("云间旅程", true);
       text.setEnabled(true);
       await pause(100);
-      heading.update("The Easy Ride", true);
+      heading.update("The Amber Path", true);
       text.update({ ...state, number: 8 }, true);
       await until(() => moving(title));
       check(true, "返回专辑架后第一次切换仍会滚动");
       await pause(750);
-      heading.update("The Easy Ride", true);
+      heading.update("The Amber Path", true);
       text.update({ ...state, number: 8 }, true);
       await pause(40);
       check(!moving(root), "相同内容与索引刷新不重复播放");

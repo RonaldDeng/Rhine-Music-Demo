@@ -1,6 +1,8 @@
 import * as THREE from "three";
 import { glassRevealGLSL, frostedTransmissionGLSL, FROSTED_ROUGHNESS } from "./glass-reveal.ts";
 import { internalOpticsFragment } from "./internal-optics.ts";
+import { setMusicGlassClarity } from "./music-model.ts";
+import { ThemeTransition } from "./theme-transition.ts";
 
 import type { MusicSelectionLighting } from "./music-lighting";
 
@@ -15,6 +17,11 @@ export class CardAppearance {
   private warmth = { value: 1 };
 
   register(name: string, high: Surface, low?: Surface) {
+    // Capture the unthemed palette exactly once, before any interpolation.
+    for (const mat of [high, low]) if (mat) {
+      mat.userData.dayColor ??= mat.color.clone();
+      mat.userData.dayAttenuation ??= mat.attenuationColor?.clone();
+    }
     this.palettes.set(name, { high, low });
   }
 
@@ -41,7 +48,7 @@ export class CardAppearance {
         shader.fragmentShader =
           "uniform float archiveQuality;\nuniform float archiveClarity;\nuniform float archiveWarmth;\n" +
           shader.fragmentShader;
-        if (name === "Frosted_Polymer") {
+        if (name === "Frosted_Polymer" && !mesh.userData.musicShell) {
           shader.vertexShader =
             "varying float vArchiveHeight;\nvarying vec2 vArchiveProjectedAxis;\n" + shader.vertexShader;
           shader.vertexShader = shader.vertexShader.replace(
@@ -73,7 +80,7 @@ export class CardAppearance {
             "#include <roughnessmap_fragment>",
             `#include <roughnessmap_fragment>\nroughnessFactor = mix(mix(0.28, ${mesh.userData.keepFrosted ? 0.38 : FROSTED_ROUGHNESS}, archiveQuality), 0.025, glassRevealAtHeight(archiveClarity, vArchiveHeight));`,
           );
-        } else if (!palette.low) {
+        } else if (!palette.low && !mesh.userData.musicShell) {
           // Stable screen-space coverage adds internal geometry without an
           // abrupt visibility toggle or a second transparent body.
           shader.fragmentShader = shader.fragmentShader.replace(
@@ -84,7 +91,7 @@ export class CardAppearance {
         this.musicLighting?.shade(shader, name);
       };
       mat.customProgramCacheKey = () =>
-        `archive-surface-clarity-${name}-${Boolean(palette.low)}-${Boolean(mesh.userData.keepFrosted)}`;
+        `archive-surface-clarity-${name}-${Boolean(palette.low)}-${Boolean(mesh.userData.keepFrosted)}-${Boolean(mesh.userData.musicShell)}`;
     }
   }
 
@@ -94,6 +101,12 @@ export class CardAppearance {
     group.traverse((child) => {
       if (!(child instanceof THREE.Mesh) || !child.userData.glassClarity)
         return;
+      if (child.userData.musicShell) {
+        child.userData.glassClarity.value = clarity;
+        if (child.userData.surface === "Frosted_Polymer")
+          setMusicGlassClarity(child.material as Surface, clarity);
+        return;
+      }
       if (child.userData.keepFrosted) return;
       child.userData.glassClarity.value = clarity;
       if (child.userData.surface !== "Frosted_Polymer") return;
@@ -175,24 +188,24 @@ export class CardAppearance {
     }
   }
 
-  setTheme(theme: "day" | "night" | "dusk") {
-    this.warmth.value = theme === "day" ? 1 : 0;
+  setTheme(theme: "day" | "night" | "dusk", transition?: ThemeTransition) {
+    const targets = transition ?? new ThemeTransition();
+    targets.number(this.warmth, "value", theme === "day" ? 1 : 0);
     for (const [name, palette] of this.palettes) {
       for (const mat of [palette.high, palette.low]) {
         if (!mat) continue;
-        mat.userData.dayColor ??= mat.color.clone();
-        mat.userData.dayAttenuation ??= mat.attenuationColor?.clone();
         if (theme === "day") {
-          mat.color.copy(mat.userData.dayColor);
-          if (mat.userData.dayAttenuation) mat.attenuationColor.copy(mat.userData.dayAttenuation);
+          targets.color(mat.color, mat.userData.dayColor);
+          if (mat.userData.dayAttenuation) targets.color(mat.attenuationColor, mat.userData.dayAttenuation);
         } else if (["Frosted_Polymer", "Ivory_Edges"].includes(name)) {
-          mat.color.set(theme === "night" ? "#f6fbff" : "#e6f0f2");
-          mat.attenuationColor?.set(theme === "night" ? "#dceafd" : "#c8dbe1");
+          targets.color(mat.color, theme === "night" ? "#f6fbff" : "#e6f0f2");
+          if (mat.attenuationColor) targets.color(mat.attenuationColor, theme === "night" ? "#dceafd" : "#c8dbe1");
         } else if (name === "Optical_Diffuser") {
-          mat.color.set(theme === "night" ? "#c6d6e5" : "#91a4af");
-        } else if (name === "Index_Inlay") mat.color.set(theme === "night" ? "#d7e9ff" : "#b9d2df");
+          targets.color(mat.color, theme === "night" ? "#c6d6e5" : "#91a4af");
+        } else if (name === "Index_Inlay") targets.color(mat.color, theme === "night" ? "#d7e9ff" : "#b9d2df");
       }
     }
+    if (!transition) targets.finish();
   }
 
   dispose(group: THREE.Group) {

@@ -222,7 +222,7 @@ function openBrowser(url) {
 
 export async function launchMusic({ projectDir = PROJECT_DIR, dataDir, probe = probeMusicService, prepare = prepareBuild, start = startServer, open = openBrowser } = {}) {
   projectDir = await fs.realpath(projectDir)
-  dataDir = path.resolve(projectDir, dataDir ?? process.env.MUSIC_DATA_DIR ?? '../music-data')
+  dataDir = path.resolve(projectDir, dataDir ?? process.env.MUSIC_DATA_DIR ?? '../music-data-v3')
   let state = await choosePort(projectDir, probe)
   if (state.kind !== 'ours') {
     await fs.mkdir(dataDir, { recursive: true })

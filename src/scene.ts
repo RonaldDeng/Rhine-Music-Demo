@@ -15,7 +15,9 @@ import { DecryptionController } from "./decryption";
 import { archiveColumns, columnFiles, fileAtSlot, fileLocation, musicLibrary, records, slotStride } from "./data";
 import { CoverAtlas } from "./cover-atlas";
 import { MusicSelectionLighting } from "./music-lighting";
+import { MusicCameraMotion, MusicPlacementMotion, MusicPresentation, musicArchiveTracksSettled, musicCinematicPose, musicExtractionAnchor } from "./music-camera";
 import { MUSIC_CD_ASSET } from "./music-cd-asset";
+import { MUSIC_MODEL, configureMusicGlass, musicAssemblyPart, normalizeMusicGeometry } from "./music-model";
 import {
   cellKey,
   sameCell,
@@ -25,6 +27,7 @@ import {
   visibleCell,
   LOOP_COLUMNS,
   LOOP_ROWS,
+  MUSIC_LOOP_ROWS,
   COLUMN_SPACING,
   ROW_SPACING,
   type ArchiveCell,
@@ -33,6 +36,7 @@ import {
 import { labelMarkSvg } from "./brand";
 import { archiveFraming, swipeDirection } from "./viewport-layout";
 import { assetUrl as publicAsset } from "./asset-url";
+import { ThemeTransition } from "./theme-transition";
 import {
   archiveWave,
   extraction,
@@ -73,6 +77,7 @@ export class ArchiveScene {
   private raycaster = new THREE.Raycaster();
   private dummy = new THREE.Object3D();
   private positions: THREE.Vector3[] = [];
+  private poolRows = LOOP_ROWS;
   private cells: ArchiveCell[] = [];
   private selectedCell: ArchiveCell = { lane: 2, row: 12 };
   private looping = false;
@@ -91,6 +96,9 @@ export class ArchiveScene {
   private scanTime = 29.1;
   private scanBlend = 0;
   private cameraAim = new THREE.Vector3();
+  private musicCamera = new MusicCameraMotion();
+  private musicPresentation = new MusicPresentation();
+  private musicPlacement = new MusicPlacementMotion();
   private outgoing: {
     group: THREE.Group;
     slot: number;
@@ -118,6 +126,7 @@ export class ArchiveScene {
   private selectionLighting?: MusicSelectionLighting;
   private theme: "day" | "night" | "dusk" = "day";
   private themeWarmth = { value: 1 };
+  private themeTransition?: ThemeTransition;
   private clock = 0;
   private loaded = false;
   private labelCanvas = document.createElement("canvas");
@@ -189,7 +198,7 @@ export class ArchiveScene {
     for (let i = 0; i < 140; i++) starPositions.push(random() * 2 - 1, random() * 2 - 1, 0);
     const starGeometry = new THREE.BufferGeometry();
     starGeometry.setAttribute("position", new THREE.Float32BufferAttribute(starPositions, 3));
-    this.stars = new THREE.Points(starGeometry, new THREE.PointsMaterial({ color: "#dbeaff", size: 1.5, sizeAttenuation: false, transparent: true, opacity: .6, depthWrite: false, fog: false }));
+    this.stars = new THREE.Points(starGeometry, new THREE.PointsMaterial({ color: "#dbeaff", size: 1.5, sizeAttenuation: false, transparent: true, opacity: 0, depthWrite: false, fog: false }));
     this.stars.visible = false;
     this.stars.frustumCulled = false;
     this.scene.add(this.stars);
@@ -231,9 +240,10 @@ export class ArchiveScene {
     gltf.scene.traverse((o) => {
       if (o instanceof THREE.Mesh) meshes.push(o);
     });
-    const count = LOOP_COLUMNS * LOOP_ROWS;
+    this.poolRows = musicLibrary ? MUSIC_LOOP_ROWS : LOOP_ROWS;
+    const count = LOOP_COLUMNS * this.poolRows;
     for (let index = 0; index < count; index++) {
-      const cell = poolCell(index);
+      const cell = poolCell(index, this.poolRows);
       this.cells.push(cell);
       this.positions.push(this.cellPosition(cell));
     }
@@ -242,9 +252,12 @@ export class ArchiveScene {
         .clone()
         .applyMatrix4(mesh.matrixWorld)
         .scale(1, 1, 1);
+      if (musicLibrary) normalizeMusicGeometry(geom);
       const source = mesh.material as THREE.MeshStandardMaterial;
       const name = source.name.replace(/\.\d+$/, "");
-      const mat = source.clone() as THREE.MeshPhysicalMaterial;
+      const mat = musicLibrary
+        ? new THREE.MeshPhysicalMaterial({ name: source.name, side: source.side })
+        : source.clone() as THREE.MeshPhysicalMaterial;
       mat.envMapIntensity = 0.6;
       if (name === "Frosted_Polymer") {
         mat.color.set("#fffdfa");
@@ -284,30 +297,12 @@ export class ArchiveScene {
         mat.roughness = 0.26;
         mat.metalness = 0.08;
       }
-      if (musicLibrary) {
-        mat.envMapIntensity = 0.3;
-        if (name === "Frosted_Polymer") {
-          mat.transmission = 0.88;
-          mat.roughness = 0.38;
-          mat.thickness = 0.16;
-          mat.attenuationColor.set("#e7cba7");
-          mat.attenuationDistance = 1.3;
-        }
-        if (name === "Ivory_Edges") {
-          mat.transmission = 0.72;
-          mat.thickness = 0.22;
-          mat.roughness = 0.30;
-          mat.clearcoat = 0.4;
-          mat.clearcoatRoughness = 0.18;
-          mat.attenuationColor.set("#edd3ae");
-          mat.attenuationDistance = 0.8;
-        }
-      }
+      if (musicLibrary) configureMusicGlass(name, mat);
       configureInternalOptics(name, mat);
       if (name === "Carbon_Ink") continue;
       const selectedMesh = new THREE.Mesh(geom, mat);
       selectedMesh.userData.surface = name;
-      selectedMesh.userData.keepFrosted = musicLibrary && name === "Frosted_Polymer";
+      selectedMesh.userData.musicShell = musicLibrary;
       selectedMesh.castShadow = name === "Optical_Diffuser";
       selectedMesh.receiveShadow = true;
       this.model.add(selectedMesh);
@@ -369,15 +364,7 @@ export class ArchiveScene {
         arrayMat.metalness = 0.05;
       }
       if (musicLibrary) {
-        if (name === "Ivory_Edges") {
-          arrayMat.transmission = 0.65;
-          arrayMat.thickness = 0.22;
-        }
-        if (name === "Frosted_Polymer") {
-          arrayMat.roughness = 0.38;
-          arrayMat.transmission = 0.86;
-          arrayMat.thickness = 0.18;
-        }
+        configureMusicGlass(name, arrayMat);
         const baseCompile = arrayMat.onBeforeCompile;
         arrayMat.onBeforeCompile = (shader, renderer) => {
           baseCompile.call(arrayMat, shader, renderer);
@@ -419,15 +406,20 @@ export class ArchiveScene {
     this.appearance.apply(this.model, 0);
     this.drawLabel(0);
     this.scene.add(this.model);
-    this.model.position.copy(this.positions[this.selectedSlot] ?? this.cellPosition(this.selectedCell));
+    // Logical slots retain their own stride; they are not display-pool indices.
+    this.model.position.copy(this.cellPosition(this.selectedCell));
     this.loaded = true;
     if (musicLibrary) await this.refreshLibrary();
     this.setTheme(this.theme);
   }
 
-  /** Call after setMusicAlbums; the pool remains fixed at 288 visible instances. */
+  /** Call after setMusicAlbums; reuse the allocated display pool and cover atlas. */
   async refreshLibrary(selectedIndex = 0) {
     if (!this.loaded || !this.covers) return;
+    this.musicPresentation.request("hidden");
+    this.musicCamera = new MusicCameraMotion();
+    this.musicPlacement = new MusicPlacementMotion();
+    this.targetDetail = this.detail = 0;
     for (const old of this.outgoing) { this.scene.remove(old.group); this.appearance.dispose(old.group); }
     this.outgoing = [];
     this.covers.reset();
@@ -436,8 +428,7 @@ export class ArchiveScene {
     this.model.visible = records.length > 0;
     for (const inst of this.instances) inst.visible = records.length > 0;
     for (const child of this.model.children) {
-      // The album print sits in front of the original physical assembly. Keep
-      // its optical rings and shell parts available for rotation/disassembly.
+      // Music uses only the shared thin shell and its independent surface print.
       if (child.userData.surface) child.visible = !musicLibrary || child.userData.surface !== "Printed_Label";
       if (child.userData.printedLabel) child.visible = !musicLibrary;
     }
@@ -477,29 +468,82 @@ export class ArchiveScene {
     this.ao.copyMaterial.needsUpdate = true;
   }
 
-  setTheme(theme: "day" | "night" | "dusk") {
+  setTheme(theme: "day" | "night" | "dusk", animate = false) {
     this.theme = theme;
-    this.themeWarmth.value = theme === "day" ? 1 : 0;
+    // A new request samples the currently rendered colors/intensities. It
+    // replaces the previous targets without finishing the previous transition.
+    const targets = new ThemeTransition();
+    targets.number(this.themeWarmth, "value", theme === "day" ? 1 : 0);
     const background = theme === "night" ? "#07111f" : theme === "dusk" ? "#b9c7cc" : "#eae5e1";
-    (this.scene.background as THREE.Color).set(background);
-    (this.scene.fog as THREE.Fog).color.set(background);
-    this.floor.material.color.set(theme === "night" ? "#0b1828" : theme === "dusk" ? "#a6b8c0" : "#d8c9b9");
-    this.renderer.toneMappingExposure = theme === "night" ? 1.08 : 1.05;
-    this.scene.environmentIntensity = theme === "night" ? .68 : .48;
-    this.light.color.set(theme === "night" ? "#e5f0ff" : theme === "dusk" ? "#eff8ff" : "#fff7ed");
-    this.light.intensity = theme === "night" ? 1.7 : 1.4;
+    targets.color(this.scene.background as THREE.Color, background);
+    targets.color((this.scene.fog as THREE.Fog).color, background);
+    targets.color(this.floor.material.color, theme === "night" ? "#0b1828" : theme === "dusk" ? "#a6b8c0" : "#d8c9b9");
+    targets.number(this.renderer, "toneMappingExposure", theme === "night" ? 1.08 : 1.05);
+    targets.number(this.scene, "environmentIntensity", theme === "night" ? .68 : .48);
+    targets.color(this.light.color, theme === "night" ? "#e5f0ff" : theme === "dusk" ? "#eff8ff" : "#fff7ed");
+    targets.number(this.light, "intensity", theme === "night" ? 1.7 : 1.4);
     for (const child of this.scene.children) if (child instanceof THREE.HemisphereLight) {
-      child.color.set(theme === "night" ? "#e2eeff" : "#fffaf5");
-      child.groundColor.set(theme === "night" ? "#56708c" : theme === "dusk" ? "#718898" : "#b4a18c");
-      child.intensity = theme === "night" ? .9 : .65;
+      targets.color(child.color, theme === "night" ? "#e2eeff" : "#fffaf5");
+      targets.color(child.groundColor, theme === "night" ? "#56708c" : theme === "dusk" ? "#718898" : "#b4a18c");
+      targets.number(child, "intensity", theme === "night" ? .9 : .65);
     }
-    if (this.stars) this.stars.visible = theme === "night";
-    this.appearance.setTheme(theme);
-    this.selectionLighting?.setTheme(theme, this.light);
+    if (this.stars) targets.number(this.stars.material, "opacity", theme === "night" ? .6 : 0);
+    this.appearance.setTheme(theme, targets);
+    this.selectionLighting?.setTheme(theme, this.light, targets);
+    this.themeTransition = animate && !this.reduced && musicLibrary ? targets : undefined;
+    if (!this.themeTransition) targets.finish();
+    this.syncThemeStars();
+  }
+
+  private syncThemeStars() {
+    if (this.stars) this.stars.visible = this.stars.material.opacity > 0;
   }
 
   private assemblyTemplate?: Promise<THREE.Group>;
+  private musicAssemblyTemplate?: Promise<THREE.Group>;
+  private async createMusicAssemblyModel() {
+    this.musicAssemblyTemplate ??= new GLTFLoader()
+      .loadAsync(publicAsset(MUSIC_CD_ASSET))
+      .then((gltf) => {
+        gltf.scene.updateMatrixWorld(true);
+        return gltf.scene;
+      })
+      .catch((error) => {
+        this.musicAssemblyTemplate = undefined;
+        throw error;
+      });
+    const template = await this.musicAssemblyTemplate;
+    const model = new THREE.Group();
+    const meshes: THREE.Mesh[] = [];
+    template.traverse((object) => {
+      if (!(object instanceof THREE.Mesh)) return;
+      const surface = (object.material as THREE.Material).name.replace(/\.\d+$/, "");
+      const geometry = normalizeMusicGeometry(object.geometry.clone().applyMatrix4(object.matrixWorld));
+      const mesh = new THREE.Mesh(geometry, object.material);
+      mesh.userData.surface = surface;
+      mesh.userData.musicShell = true;
+      mesh.userData.assemblyPart = musicAssemblyPart(surface);
+      model.add(mesh);
+      meshes.push(mesh);
+    });
+    this.appearance.prepare(model);
+    this.appearance.apply(model, 1);
+    this.appearance.setClarity(model, 1);
+    model.userData.musicShell = true;
+    return {
+      model,
+      setClarity: (value: number) => this.appearance.setClarity(model, value),
+      dispose: () => {
+        for (const mesh of meshes) {
+          mesh.geometry.dispose();
+          (mesh.material as THREE.Material).dispose();
+        }
+      },
+    };
+  }
+
   async createAssemblyModel() {
+    if (musicLibrary) return this.createMusicAssemblyModel();
     this.assemblyTemplate ??= new GLTFLoader()
       .loadAsync(publicAsset("assets/archive-assembly.glb"))
       .then((gltf) => {
@@ -565,6 +609,11 @@ export class ArchiveScene {
     };
   }
   setMode(mode: "hidden" | "archive" | "detail") {
+    if (musicLibrary) this.musicPresentation.request(mode);
+    if (musicLibrary && mode === "hidden") {
+      this.musicCamera = new MusicCameraMotion();
+      this.musicPlacement = new MusicPlacementMotion();
+    }
     if (mode === "detail") this.decryption.enter(this.scanBlend > .9 && this.decryption.clarity > .999);
     else this.decryption.leave();
     if (mode === "hidden") this.decryption.select();
@@ -582,7 +631,9 @@ export class ArchiveScene {
     }
     this.lastInteraction = this.clock;
     this.targetReveal = mode === "hidden" ? 0 : 1;
-    this.targetDetail = mode === "detail" ? 1 : 0;
+    this.targetDetail = musicLibrary
+      ? Number(this.musicPresentation.holdsDetail)
+      : mode === "detail" ? 1 : 0;
     this.dragging = false;
     if (mode !== "detail") {
       this.targetRotation = 0;
@@ -591,6 +642,72 @@ export class ArchiveScene {
   }
   setReduced(value: boolean) {
     this.reduced = value;
+    if (value && this.themeTransition) {
+      this.themeTransition.finish();
+      this.themeTransition = undefined;
+      this.syncThemeStars();
+    }
+  }
+  /** The intro has already rendered the archive pose; hand over its same state. */
+  finishMusicIntro(nowSeconds: number) {
+    if (!musicLibrary || !this.loaded) return;
+    this.clock = this.last = this.lastInteraction = nowSeconds;
+    this.setMode("archive");
+    this.reveal = this.targetReveal = 1;
+    this.detail = this.targetDetail = 0;
+    this.rotation = this.targetRotation = 0;
+    this.returnY = null;
+    this.dragging = this.canInspect = false;
+    this.scanTime = 29.1;
+    this.scanBlend = this.idleGain = 0;
+    this.pulses = [];
+    this.pendingPulse = null;
+    this.pointer.set(0, 0);
+    // The final preview hold is at rest. Discard finite-difference velocity
+    // from the film and seed browsing with the rendered position/FOV intact.
+    this.musicCamera = new MusicCameraMotion();
+    this.musicCamera.observe(this.camera, this.cameraAim, 0);
+    this.musicPresentation.update(0, true, true, true);
+  }
+  showMusicArchiveImmediately(nowSeconds: number) {
+    if (!musicLibrary || !this.loaded) return;
+    this.musicPresentation = new MusicPresentation();
+    this.musicCamera = new MusicCameraMotion();
+    this.musicPlacement = new MusicPlacementMotion();
+    this.clock = this.last = this.lastInteraction = nowSeconds;
+    this.setMode("archive");
+    this.reveal = this.targetReveal = 1;
+    this.detail = this.targetDetail = 0;
+    this.rotation = this.targetRotation = 0;
+    this.returnY = null;
+    this.dragging = this.canInspect = false;
+    this.pointer.set(0, 0);
+    this.lift = { value: MUSIC_PREVIEW_LIFT, velocity: 0 };
+    const chosen = this.cellPosition(this.selectedCell);
+    this.rail = { value: -2.17 - chosen.z, velocity: 0 };
+    this.columnCamera = { value: chosen.x, velocity: 0 };
+    this.shoulder = { value: this.selectedCell.row, velocity: 0 };
+    this.laneFocus = { value: this.selectedCell.lane, velocity: 0 };
+    this.scanTime = 29.1;
+    this.scanBlend = this.idleGain = 0;
+    this.pulseGain = 1;
+    this.pulses = [];
+    this.pendingPulse = null;
+    for (const old of this.outgoing) {
+      this.scene.remove(old.group);
+      this.appearance.dispose(old.group);
+    }
+    this.outgoing = [];
+    this.decryption.select();
+    const reduced = this.reduced;
+    try {
+      // Snap and render the existing archive targets before the first visible
+      // frame; subsequent updates resume the user's normal motion preference.
+      this.reduced = true;
+      this.update(nowSeconds);
+    } finally {
+      this.reduced = reduced;
+    }
   }
   setQuality(value: RenderQuality | boolean) {
     const quality =
@@ -689,6 +806,7 @@ export class ArchiveScene {
       ? selectionCell(index, this.selectedCell, navigation)
       : { lane: canonical.lane, row: canonical.row };
     const changed = !sameCell(cell, this.selectedCell);
+    if (musicLibrary && changed) this.musicPresentation.selectionChanged();
     if (this.looping && changed && this.loaded && this.lift.value > 0.0001) {
       const group = this.model.clone(true);
       this.appearance.prepare(group);
@@ -929,12 +1047,16 @@ export class ArchiveScene {
   }
   update(
     time: number,
-    cinematic?: { reveal: number; lift: number; zoom: number; time: number },
+    cinematic?: { reveal: number; lift: number; zoom: number; time: number; musicIntro?: boolean },
   ) {
     const dt = Math.min(time - this.last || 0.016, 0.05);
     this.last = time;
     this.clock = time;
     if (!this.loaded) return;
+    if (this.themeTransition) {
+      if (this.themeTransition.update(time)) this.themeTransition = undefined;
+      this.syncThemeStars();
+    }
     const previewLift = musicLibrary ? MUSIC_PREVIEW_LIFT : 0.4;
     const blend = 1 - Math.exp(-dt * (this.reduced ? 35 : 2.8));
     this.reveal = cinematic
@@ -943,7 +1065,11 @@ export class ArchiveScene {
     this.rotation = this.targetDetail
       ? THREE.MathUtils.lerp(this.rotation, this.targetRotation, blend)
       : returnStep(this.rotation, dt, this.reduced);
-    const shot = cinematic?.time ?? 29.1;
+    const musicIntro = Boolean(musicLibrary && cinematic?.musicIntro);
+    // Music stops before the film's second extraction/inspection shot. The
+    // last 400 ms hold the exact interactive pose instead of cutting to it.
+    const shot = musicIntro ? Math.min(cinematic!.time, 27.12) : cinematic?.time ?? 29.1;
+    const introSettle = musicIntro ? ease((shot - 25.3) / 1.42) : 0;
     if (cinematic) {
       this.scanTime = shot;
       this.scanBlend = 1;
@@ -965,11 +1091,14 @@ export class ArchiveScene {
       dt,
     );
     if (cinematic) {
-      this.rail.value = 0;
+      this.rail.value = musicIntro ? -2.17 - chosen.z : 0;
       this.rail.velocity = 0;
-      this.lift.value = extraction(shot);
+      this.lift.value = musicIntro
+        ? THREE.MathUtils.lerp(extraction(shot), previewLift, introSettle)
+        : extraction(shot);
       this.lift.velocity = 0;
       this.shoulder.value = selectedRow;
+      if (musicIntro) this.shoulder.velocity = 0;
       this.laneFocus.value = selectedLane;
       this.laneFocus.velocity = 0;
       this.columnCamera.value = chosen.x;
@@ -977,14 +1106,15 @@ export class ArchiveScene {
     }
     // Keep the illuminated set near the origin. Lateral navigation is a track
     // movement of the whole array, just like the existing front/back rail.
-    const trackX = cinematic ? 0 : this.columnCamera.value;
+    const trackX = cinematic && !musicIntro ? 0 : this.columnCamera.value;
     const center = {
       lane: this.columnCamera.value / COLUMN_SPACING + 2,
       row: (-this.rail.value - 2.17) / ROW_SPACING + 15.5,
     };
     for (let i = 0; i < this.positions.length; i++) {
       this.cells[i] =
-        cinematic || !this.looping ? poolCell(i) : visibleCell(i, center);
+        !musicIntro && (cinematic || !this.looping)
+          ? poolCell(i, this.poolRows) : visibleCell(i, center, this.poolRows);
       this.positions[i].set(
         (this.cells[i].lane - 2) * COLUMN_SPACING,
         -4.6,
@@ -1015,6 +1145,14 @@ export class ArchiveScene {
       1 - Math.exp(-dt * 8),
     );
     const field = (row: number, lane: number) => {
+      if (musicIntro) {
+        // Recenter the authored wave on whichever album the library selected.
+        // The same looping cells, resting shoulders and lane weights are used
+        // on both sides of the handoff, so no rows pop or change altitude.
+        const opening = cinematicField(row - selectedRow + 12, lane - selectedLane + 2, shot);
+        const resting = settlingWave(row - selectedRow, 26.56) * columnStrength(lane, selectedLane);
+        return THREE.MathUtils.lerp(opening, resting, introSettle);
+      }
       if (cinematic)
         return cinematicField(
           row,
@@ -1090,7 +1228,7 @@ export class ArchiveScene {
         ? this.detail
         : ease((this.lift.value - previewLift) / (INSPECTION_LIFT - previewLift));
     this.detail = cinematic
-      ? cinematic.zoom
+      ? musicIntro ? 0 : musicLibrary ? musicCinematicPose(shot).detail : cinematic.zoom
       : THREE.MathUtils.lerp(this.detail, cameraTarget, blend);
     const detail = this.detail;
     this.decryption.update(dt, detail > .78 && this.lift.value > 3.3, this.reduced,
@@ -1170,7 +1308,7 @@ export class ArchiveScene {
       this.dummy.rotation.set(slope * 0.024 * (1 - detail), 0, 0);
       this.dummy.scale.setScalar(
         hidden.has(cellKey(this.cells[i])) ||
-          ((cinematic || !this.looping) && i >= 160)
+          (!musicIntro && (cinematic || !this.looping) && i >= (musicLibrary ? 5 * this.poolRows : 160))
           ? 0
           : 1,
       );
@@ -1203,10 +1341,15 @@ export class ArchiveScene {
     // Do not calibrate field of view from the visible fragment of a file.
     const orbit = ease((shot - 22.6) / 1.6);
     const settle = ease((shot - 24.25) / 2.25);
-    const yaw = THREE.MathUtils.degToRad(89 - 22 * orbit - 8 * settle);
+    const navigationOrbit = musicLibrary && !cinematic
+      ? this.musicCamera.navigation(this.columnCamera.velocity / COLUMN_SPACING,
+          this.rail.velocity / ROW_SPACING, detail, dt, this.reduced)
+      : { yaw: 0, elevation: 0 };
+    const yaw = THREE.MathUtils.degToRad(89 - 22 * orbit - 8 * settle) + navigationOrbit.yaw;
     const elevation = THREE.MathUtils.degToRad(
-      3 + 40 * ease((shot - 21.96) / 0.22) - 8 * orbit - 16 * settle,
-    );
+      3 + 40 * ease((shot - 21.96) / 0.22) - 8 * orbit - 16 * settle +
+        (musicIntro ? 6 * introSettle : musicLibrary && !cinematic ? 6 : 0),
+    ) + navigationOrbit.elevation;
     const span = THREE.MathUtils.lerp(
       THREE.MathUtils.lerp(10.8, 10.3, orbit),
       7.33,
@@ -1231,18 +1374,23 @@ export class ArchiveScene {
     if (cinematic) {
       const earlyTurn = ease((shot - 27.3) / 1.3);
       const finalTurn = ease((shot - 28.6) / 5.4);
-      const shotYaw =
-        yaw - THREE.MathUtils.degToRad(9 * earlyTurn + 32 * finalTurn);
-      const shotElevation =
-        elevation - THREE.MathUtils.degToRad(1.5 * earlyTurn + 3.7 * finalTurn);
+      const musicPose = musicCinematicPose(shot, THREE.MathUtils.radToDeg(yaw), THREE.MathUtils.radToDeg(elevation));
+      const shotYaw = musicLibrary ? THREE.MathUtils.degToRad(musicPose.yaw)
+        : yaw - THREE.MathUtils.degToRad(9 * earlyTurn + 32 * finalTurn);
+      const shotElevation = musicLibrary ? THREE.MathUtils.degToRad(musicPose.elevation)
+        : elevation - THREE.MathUtils.degToRad(1.5 * earlyTurn + 3.7 * finalTurn);
       viewDirection.set(
         -Math.sin(shotYaw) * Math.cos(shotElevation),
         Math.sin(shotElevation),
         Math.cos(shotYaw) * Math.cos(shotElevation),
       );
     } else {
+      // Retain a subtle view from the array's side instead of flattening face-on.
+      const detailYaw = THREE.MathUtils.degToRad(8);
       viewDirection
-        .lerp(new THREE.Vector3(-0.277, 0.238, 0.931), detail)
+        .lerp(musicLibrary
+          ? new THREE.Vector3(-Math.sin(detailYaw), 0, Math.cos(detailYaw))
+          : new THREE.Vector3(-0.277, 0.238, 0.931), detail)
         .normalize();
     }
     if (cinematic) {
@@ -1268,7 +1416,9 @@ export class ArchiveScene {
       const pixelScale = 1080 / span;
       const anchorAim = this.model.position
         .clone()
-        .add(new THREE.Vector3(-2.5, 3.7, 0));
+        .add(musicLibrary
+          ? new THREE.Vector3(-MUSIC_MODEL.width / 2, MUSIC_MODEL.center.y + MUSIC_MODEL.height / 2, 0)
+          : new THREE.Vector3(-2.5, 3.7, 0));
       anchorAim.addScaledVector(
         right,
         -(THREE.MathUtils.lerp(840, 518, pan) - 960) / pixelScale,
@@ -1282,12 +1432,13 @@ export class ArchiveScene {
     if (cinematic && shot > 27.3) {
       const close = ease((shot - 27.3) / 6.7);
       const extractionCamera = ease((shot - 27.3) / 1.25);
-      const screenX = THREE.MathUtils.lerp(
+      const musicAnchor = musicLibrary ? musicExtractionAnchor(shot) : null;
+      const screenX = musicAnchor?.x ?? THREE.MathUtils.lerp(
         518 - 98 * extractionCamera,
         618,
         close,
       );
-      const screenY = THREE.MathUtils.lerp(
+      const screenY = musicAnchor?.y ?? THREE.MathUtils.lerp(
         296 + 34 * extractionCamera,
         287,
         close,
@@ -1301,13 +1452,37 @@ export class ArchiveScene {
         .normalize();
       const anchorAim = this.model.position
         .clone()
-        .add(new THREE.Vector3(-2.5, 3.7, 0));
+        .add(musicLibrary
+          ? new THREE.Vector3(-MUSIC_MODEL.width / 2, MUSIC_MODEL.center.y + MUSIC_MODEL.height / 2, 0)
+          : new THREE.Vector3(-2.5, 3.7, 0));
       anchorAim.addScaledVector(right, -(screenX - 960) / pixelScale);
       anchorAim.addScaledVector(up, -(540 - screenY) / pixelScale);
-      cameraAim.lerp(anchorAim, ease((shot - 27.3) / 0.5));
+      // The preceding shot already holds this corner. Starting again from the
+      // array aim caused a visible camera jump at the extraction boundary.
+      if (musicLibrary) cameraAim.copy(anchorAim);
+      else cameraAim.lerp(anchorAim, ease((shot - 27.3) / 0.5));
+      if (musicLibrary) {
+        // The film ends face-on at the center. The menu placement is a later,
+        // separately gated camera move, after this shot has actually settled.
+        const centerAim = this.model.position.clone().add(new THREE.Vector3().copy(MUSIC_MODEL.center));
+        cameraAim.lerp(centerAim, musicCinematicPose(shot).centered);
+      }
     }
     const framing = archiveFraming(this.container.clientWidth, this.container.clientHeight, span, detail,
       this.container.closest<HTMLElement>("[data-layout]")?.dataset.layout === "compact");
+    if (musicIntro) {
+      // Keep the film's corner tracking early, then release it smoothly to
+      // the existing browsing composition, including the portrait endpoint.
+      const previewAim = arrayAim.clone();
+      if (framing.portrait) {
+        const right = new THREE.Vector3()
+          .crossVectors(new THREE.Vector3(0, 1, 0), viewDirection).normalize();
+        const up = new THREE.Vector3().crossVectors(viewDirection, right).normalize();
+        previewAim.set(0, -4.6 + settlingWave(0, 26.56) + 0.4 + 1.85, -2.17);
+        previewAim.addScaledVector(up, (framing.previewY - 0.5) * framing.span);
+      }
+      cameraAim.lerp(previewAim, introSettle);
+    }
     if (!cinematic) {
       const right = new THREE.Vector3()
         .crossVectors(new THREE.Vector3(0, 1, 0), viewDirection)
@@ -1326,29 +1501,55 @@ export class ArchiveScene {
       }
       const detailAim = this.model.position
         .clone()
-        .add(new THREE.Vector3(0, 1.85, 0));
-      detailAim.addScaledVector(right, (0.5 - framing.detailX) * width / pixelScale);
-      detailAim.addScaledVector(up, (framing.detailY - 0.5) * height / pixelScale);
+        .add(musicLibrary ? new THREE.Vector3().copy(MUSIC_MODEL.center) : new THREE.Vector3(0, 1.85, 0));
+      if (musicLibrary)
+        this.musicPresentation.overlapPlacement(detail, this.lift.value / INSPECTION_LIFT);
+      const presentation = musicLibrary
+        ? this.musicPlacement.update(Number(this.musicPresentation.placed), dt, this.reduced)
+        : 1;
+      if (musicLibrary)
+        this.musicPresentation.overlapReturn(presentation,
+          this.returnY === null && Math.abs(this.rotation) < 0.001);
+      const detailX = musicLibrary ? framing.portrait ? 0.5 : 0.25 : framing.detailX;
+      detailAim.addScaledVector(right, (0.5 - detailX) * width / pixelScale * presentation);
+      detailAim.addScaledVector(up, (framing.detailY - 0.5) * height / pixelScale * presentation);
       cameraAim.lerp(detailAim, detail);
     }
     const cameraPosition = cameraAim
       .clone()
       .addScaledVector(viewDirection, distance);
-    if (!cinematic && !this.reduced) {
+    if (!cinematic && !this.reduced && (!musicLibrary || !this.musicPresentation.holdsDetail)) {
       cameraPosition.x += this.pointer.x * 0.12;
       cameraPosition.y -= this.pointer.y * 0.12;
     }
-    const cameraBlend = cinematic ? 1 : 1 - Math.exp(-dt * 5);
-    this.camera.position.lerp(cameraPosition, cameraBlend);
-    this.cameraAim.lerp(cameraAim, cameraBlend);
-    this.camera.lookAt(this.cameraAim);
-    this.camera.fov = THREE.MathUtils.lerp(
-      this.camera.fov,
-      THREE.MathUtils.radToDeg(
-        2 * Math.atan((cinematic ? THREE.MathUtils.lerp(span, 5.9, detail) : framing.span) / (2 * distance)),
-      ),
-      cameraBlend,
-    );
+    if (musicLibrary && !cinematic) {
+      this.musicCamera.update(this.camera, this.cameraAim, cameraPosition, cameraAim,
+        framing.span, dt, this.reduced);
+      const detailTarget = this.musicPresentation.holdsDetail ? 1 : 0;
+      const liftTarget = this.musicPresentation.holdsDetail ? INSPECTION_LIFT : previewLift * this.targetReveal;
+      const tracksSettled = this.musicPresentation.holdsDetail || musicArchiveTracksSettled(
+        { rail: this.rail, column: this.columnCamera, shoulder: this.shoulder, lane: this.laneFocus },
+        { rail: -2.17 - chosen.z, column: chosen.x, shoulder: selectedRow, lane: selectedLane });
+      this.musicPresentation.update(dt,
+        this.musicCamera.isSettled(this.camera, this.cameraAim, cameraPosition, cameraAim, framing.span),
+        this.musicPlacement.settled && tracksSettled && Math.abs(this.detail - detailTarget) < 0.001 && Math.abs(this.lift.value - liftTarget) < 0.008 &&
+          Math.abs(this.rotation) < 0.001 && Math.abs(this.lift.velocity) < 0.025,
+        this.reduced);
+      this.targetDetail = Number(this.musicPresentation.holdsDetail);
+    } else {
+      const cameraBlend = cinematic ? 1 : 1 - Math.exp(-dt * 5);
+      this.camera.position.lerp(cameraPosition, cameraBlend);
+      this.cameraAim.lerp(cameraAim, cameraBlend);
+      this.camera.lookAt(this.cameraAim);
+      this.camera.fov = THREE.MathUtils.lerp(
+        this.camera.fov,
+        THREE.MathUtils.radToDeg(
+          2 * Math.atan((cinematic && !musicIntro ? THREE.MathUtils.lerp(span, 5.9, detail) : framing.span) / (2 * distance)),
+        ),
+        cameraBlend,
+      );
+      if (musicLibrary) this.musicCamera.observe(this.camera, this.cameraAim, dt);
+    }
     const fog = this.scene.fog as THREE.Fog;
     // The camera position is damped after its target distance changes. Anchor
     // fog to the rendered camera, or entry puts the array behind the far plane
@@ -1381,6 +1582,7 @@ export class ArchiveScene {
     this.clearance = this.model.position.y - neighborTop;
     this.canInspect =
       !cinematic &&
+      (!musicLibrary || this.musicPresentation.phase === "presented") &&
       Boolean(this.targetDetail) &&
       detail > 0.9 &&
       this.pulseGain < 0.01 &&
@@ -1407,7 +1609,7 @@ export class ArchiveScene {
         this.quality.depthOfField) /
       100;
     this.renderer.info.reset();
-    this.selectionLighting?.update(this.model, this.camera, dt, musicLibrary && records.length > 0 && this.model.visible, this.reduced);
+    this.selectionLighting?.update(this.model, this.camera, dt, musicLibrary && records.length > 0 && this.model.visible, this.reduced, Boolean(cinematic));
     // AO normals and bokeh depth render this scene again without moving it.
     // Music frames share the first pass's shadows; the archive reference keeps
     // Three's original automatic updates. Animated casters still update each frame.
@@ -1428,6 +1630,13 @@ export class ArchiveScene {
   get detailVisibility() {
     return ease((this.detail - 0.25) / 0.55);
   }
+  get musicPresentationReady() { return this.loaded && this.musicPresentation.phase === "presented"; }
+  get musicArchiveReady() { return this.loaded && this.musicPresentation.phase === "archive"; }
+  get musicArchiveInteractive() {
+    return this.loaded && (this.musicPresentation.phase === "archive" ||
+      (this.musicPresentation.phase === "returning-array" && this.detail <= 0.2 && Math.abs(this.rotation) < 0.02));
+  }
+  get musicPresentationPhase() { return this.musicPresentation.phase; }
   getStats() {
     this.model.updateMatrixWorld(true);
     const project = (x: number, y: number, z: number) => {
@@ -1440,6 +1649,7 @@ export class ArchiveScene {
       decryption: { ...this.decryption.frame, clarity: this.decryption.clarity },
       topLeft: project(-2.5, 3.7, 0),
       topRight: project(2.5, 3.7, 0),
+      projectedCenter: project(0, MUSIC_MODEL.center.y, 0),
       labelTopLeft: project(-1.855, 3.27, 0.255),
       labelBottomLeft: project(-1.855, 2.81, 0.255),
       modelPosition: this.model.position
@@ -1448,6 +1658,7 @@ export class ArchiveScene {
       cameraPosition: this.camera.position
         .toArray()
         .map((v) => Math.round(v * 10000) / 10000),
+      cameraAim: this.cameraAim.toArray().map((v) => Math.round(v * 10000) / 10000),
       fieldOfView: this.camera.fov,
       loaded: this.loaded,
       drawCalls: this.renderer.info.render.calls,
@@ -1490,6 +1701,11 @@ export class ArchiveScene {
       previewLift: musicLibrary ? MUSIC_PREVIEW_LIFT : 0.4,
       appearance: Math.round(ease(this.lift.value / 0.4) * 1000) / 1000,
       cameraDetail: Math.round(this.detail * 1000) / 1000,
+      musicPresentationPhase: this.musicPresentationPhase,
+      musicPlacement: { progress: this.musicPlacement.value, velocity: this.musicPlacement.velocity,
+        settled: this.musicPlacement.settled },
+      musicPresentationReady: this.musicPresentationReady,
+      musicArchiveReady: this.musicArchiveReady,
       idleGain: this.idleGain,
       cameraDistance: this.camera.position.distanceTo(this.cameraAim),
       cameraNear: this.camera.near,

@@ -4,6 +4,11 @@ import "./quality-settings.css";
 import "./document-decryption.css";
 import "./decryption.css";
 import "./music.css";
+import "./music-navigation-motion.css";
+import "./music-navigation-ruler.css";
+import "./music-transport-title.css";
+import "./music-theme.css";
+import "./music-theme-switch.css";
 import { DocumentDecryption } from "./document-decryption";
 import { ContentTransition, SurfaceTransition } from "./ui-transitions";
 import { qualityMarkup, syncQualityUI } from "./quality-settings";
@@ -14,6 +19,8 @@ import {
   columnFiles,
   fileLocation,
   setMusicAlbums,
+  orderMusicAlbums,
+  type MusicSortMode,
 } from "./data";
 import { wrap, type ArchiveNavigation } from "./archive-loop";
 import {
@@ -23,7 +30,6 @@ import {
   type RenderQuality,
 } from "./render-quality";
 import { MusicPlayer, type MusicPlayerState } from "./music-player";
-import { MusicBoot } from "./music-boot";
 import { ModelViewer } from "./model-viewer";
 import { TerminalAudio } from "./audio";
 import type {
@@ -36,7 +42,11 @@ import { demoAlbums, demoGenres } from "./demo-library";
 import { escapeHtml as esc } from "./html";
 import { albumTitleMarkup, setupMusicTitleLayout } from "./music-title";
 import { setupMusicTextMotion } from "./music-text-motion";
+import { setupTransportTitle } from "./music-transport-title";
 import { setupMusicTicks } from "./music-ticks";
+import { setupMusicRuler } from "./music-ruler";
+import { MusicPresentation } from "./music-presentation";
+import { MusicBoot } from "./music-boot";
 
 type Theme = "day" | "night";
 type Panel = "library" | "search" | "settings" | null;
@@ -46,6 +56,7 @@ const svg = (path: string) =>
   `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${path}</svg>`;
 const icons = {
   play: svg('<path d="m9 5 11 7-11 7Z" fill="currentColor" stroke="none"/>'),
+  pause: svg('<path d="M7 5h3v14H7zM14 5h3v14h-3z" fill="currentColor" stroke="none"/>'),
   stop: svg('<rect x="6" y="6" width="12" height="12" rx="1"/>'),
   search: svg(
     '<circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4.5 4.5"/>',
@@ -70,6 +81,7 @@ const save = (key: string, value: unknown) => {
 const preferences = {
   ...{
     theme: "day" as Theme,
+    sortMode: "genre" as MusicSortMode,
     quality: "original" as QualityPreset,
     reduced: false,
     volume: 0.65,
@@ -82,6 +94,7 @@ const preferences = {
   ...read<
     Partial<{
       theme: Theme;
+      sortMode: MusicSortMode;
       quality: QualityPreset;
       reduced: boolean;
       volume: number;
@@ -102,6 +115,17 @@ if (!["day", "night"].includes(preferences.theme)) {
 }
 if (!Object.hasOwn(qualityPresets, preferences.quality))
   preferences.quality = "original";
+if (!["genre", "artist", "album"].includes(preferences.sortMode))
+  preferences.sortMode = "genre";
+const sortLabels: Record<MusicSortMode, { name: string; column: string; code: string }> = {
+  genre: { name: "按流派", column: "流派", code: "GENRE" },
+  artist: { name: "按歌手名字", column: "歌手", code: "ARTIST" },
+  album: { name: "按专辑名字", column: "分组", code: "ALBUMS" },
+};
+const sortLabel = sortLabels[preferences.sortMode];
+let libraryReceived = false,
+  scanSubmitting = false;
+let scanRefreshTimer: ReturnType<typeof setTimeout> | undefined;
 let library: MusicLibrary = {
   version: 1,
   albums: [],
@@ -166,7 +190,7 @@ stage.innerHTML = `
       <button data-action="search">${icons.search}<span>搜索</span></button>
       <div class="theme-switch" aria-label="主题">${(["day", "night"] as Theme[]).map((t) => `<button data-theme="${t}" aria-label="${themeNames[t]}主题" aria-pressed="${preferences.theme === t}"><i class="theme-dot ${t}"></i><span>${themeNames[t]}</span></button>`).join("")}</div>
       <button data-action="settings" class="icon-button" aria-label="播放与画质设置">${icons.settings}</button>
-      <div class="minimal-transport" role="group" aria-label="音乐播放"><button data-action="play-pause" id="play-pause" aria-label="播放" aria-pressed="false">${icons.play}</button><button data-action="stop" id="stop-playback" aria-label="停止">${icons.stop}</button></div>
+      <div class="minimal-transport" role="group" aria-label="音乐播放"><span id="transport-track" class="transport-track" aria-hidden="true"><span id="transport-track-label"></span></span><button data-action="play-pause" id="play-pause" aria-label="播放" aria-pressed="false"><span class="transport-glyph transport-play" aria-hidden="true">${icons.play}</span><span class="transport-glyph transport-pause" aria-hidden="true">${icons.pause}</span></button><button data-action="stop" id="stop-playback" aria-label="停止">${icons.stop}</button></div>
     </nav>
   </header>
   <div id="library-status" class="library-status"><i></i><span>正在读取本地音乐索引</span></div>
@@ -180,9 +204,9 @@ stage.innerHTML = `
     <div class="music-navigation">
       <div class="music-counter"><span class="music-eyebrow">ALBUM / SELECT</span><div><b id="selection-number">01</b><span>/ <i id="selection-total">00</i></span></div></div>
       <div class="album-stepper"><button data-action="prev" aria-label="上一个专辑">↑</button><div id="album-ticks"></div><button data-action="next" aria-label="下一个专辑">↓</button></div>
-      <div class="genre-stepper"><button data-action="genre-prev" aria-label="上一个流派">←</button><div><small id="genre-position">GENRE <span id="genre-index">01</span> / <span id="genre-total">00</span></small><button data-action="genres" id="genre-name"></button></div><button data-action="genre-next" aria-label="下一个流派">→</button></div>
+      <div class="genre-stepper"><button data-action="genre-prev" aria-label="上一个${sortLabel.column}">←</button><div><small id="genre-position">${sortLabel.code} <span id="genre-index">01</span> / <span id="genre-total">00</span></small><button data-action="genres" id="genre-name"></button></div><button data-action="genre-next" aria-label="下一个${sortLabel.column}">→</button></div>
     </div>
-    <div class="music-keyhint">← → 流派 <span>／</span> ↑ ↓ 专辑 <span>／</span> ENTER 打开专辑</div>
+    <div class="music-keyhint">← → ${sortLabel.column} <span>／</span> ↑ ↓ 专辑 <span>／</span> ENTER 打开专辑</div>
   </section>
   <section id="music-detail" class="music-detail" aria-label="专辑详情" hidden>
     <button class="music-back" data-action="back">← 返回专辑架 <kbd>ESC</kbd></button>
@@ -196,13 +220,16 @@ stage.innerHTML = `
 `;
 const titleMotion = setupMusicTitleLayout(stage);
 const textMotion = setupMusicTextMotion(stage);
-const tickMotion = setupMusicTicks($("#album-ticks"));
+// Keep the previous navigation available while the ruler version is on trial.
+const tickMotion = new URLSearchParams(location.search).get("nav") === "previous"
+  ? setupMusicTicks($("#album-ticks"))
+  : setupMusicRuler($("#album-ticks"));
 let selectionInitialized = false;
 const selectionMotionEnabled = () =>
   ready &&
+  !boot?.active &&
   mode === "archive" &&
   !$("#music-browse").hidden &&
-  !boot?.active &&
   !preferences.reduced;
 function syncSelectionMotion() {
   const enabled = selectionMotionEnabled();
@@ -270,26 +297,114 @@ const documentDecryption = new DocumentDecryption(
 const tabTransition = new ContentTransition();
 const detailTransition = new SurfaceTransition(
   $("#music-detail"),
-  undefined,
-  180,
-  180,
+  $("#album-detail-content"),
+  360,
+  240,
+  "right",
 );
 const browseTransition = new SurfaceTransition(
   $("#music-browse"),
   undefined,
-  220,
+  // The reading veil covers a large area: ease into it after the camera settles.
+  720,
   140,
+  "up",
+  "cubic-bezier(0.45, 0, 0.25, 1)",
 );
 let detailIdentity = "",
   pendingDetailFocus = false;
+let libraryRebuilding = false;
+type LibraryIntent = { index: number; navigation?: ArchiveNavigation; openAfter: boolean } |
+  { mode: "archive" | "detail" };
+let libraryIntent: LibraryIntent | undefined;
+const presentation = new MusicPresentation({
+  presentationReady: () => scene?.musicPresentationReady ?? false,
+  archiveReady: () => scene?.musicArchiveReady ?? false,
+  archiveInteractive: () => scene?.musicArchiveInteractive ?? false,
+  enterCamera: () => {
+    scene?.setMode("detail");
+    effects.setScene("detail");
+    effects.play("open");
+  },
+  returnCamera: () => {
+    scene?.setMode("archive");
+    effects.setScene("archive");
+    effects.play("back");
+  },
+  select: ({ index, navigation }) => commitSelection(index, navigation),
+  mode: (next) => {
+    mode = next;
+    stage.dataset.mode = next;
+    syncSelectionMotion();
+  },
+  prepareMenu: () => {
+    activeTab = "tracks";
+    detailTransition.hide(true);
+    renderDetail();
+    const content = $("#album-detail-content");
+    content.style.removeProperty("opacity");
+    content.style.removeProperty("transform");
+    $("#music-detail").inert = true;
+    $("#music-detail").setAttribute("aria-hidden", "true");
+  },
+  showMenu: () => {
+    const detail = $("#music-detail"), content = $("#album-detail-content");
+    detailTransition.show(preferences.reduced);
+    detail.inert = !!panel;
+    detail.setAttribute("aria-hidden", "false");
+    content.inert = false;
+    content.scrollTop = 0;
+    documentDecryption.reset(content, preferences.reduced);
+    pendingDetailFocus = true;
+  },
+  hideMenu: (done) => {
+    pendingDetailFocus = false;
+    tabTransition.cancel();
+    $("#music-detail").inert = true;
+    $("#music-detail").setAttribute("aria-hidden", "true");
+    detailTransition.hide(preferences.reduced, done);
+  },
+  hideBrowse: (done) => {
+    $("#music-browse").inert = true;
+    $("#music-browse").setAttribute("aria-hidden", "true");
+    browseTransition.hide(preferences.reduced, done);
+  },
+  showBrowse: showBrowseSurface,
+});
+boot = new MusicBoot(stage, {
+  reduced: () => preferences.reduced,
+  onStart: () => {
+    presentation.reset();
+    detailTransition.hide(true);
+    browseTransition.hide(true);
+    scene?.setMode("hidden");
+    syncSelectionMotion();
+  },
+  onComplete: (reason) => {
+    const now = performance.now() / 1000;
+    if (reason === "skip") scene?.showMusicArchiveImmediately(now);
+    else scene?.finishMusicIntro(now);
+    effects.setScene("archive");
+    showBrowseSurface();
+  },
+});
+function showBrowseSurface() {
+  if (!albums.length || boot?.active) return;
+  browseTransition.show(preferences.reduced);
+  $("#music-browse").inert = !!panel;
+  $("#music-browse").setAttribute("aria-hidden", "false");
+  syncSelectionMotion();
+  if (!panel) $("[data-action=open]").focus({ preventScroll: true });
+}
 function savePrefs() {
   save("rhine-music-preferences", preferences);
 }
 function setTheme(theme: Theme) {
   if (theme !== "day" && theme !== "night") theme = "day";
+  if (theme === preferences.theme) return;
   preferences.theme = theme;
   stage.dataset.theme = theme;
-  scene?.setTheme(theme);
+  scene?.setTheme(theme, !preferences.reduced);
   viewer?.setTheme(theme);
   document
     .querySelectorAll<HTMLButtonElement>("button[data-theme]")
@@ -334,13 +449,19 @@ async function request<T>(url: string, body?: unknown): Promise<T> {
   return data as T;
 }
 async function loadLibrary(force = false) {
+  // Keep the selected cards and cover atlas stable for the opening shot.
+  if (boot?.active) {
+    clearTimeout(pollTimer);
+    pollTimer = setTimeout(() => void loadLibrary(force), 1000);
+    return;
+  }
   if (refreshing) return;
   refreshing = true;
   const stateVersion = libraryStateVersion;
   try {
     const next = await request<MusicLibrary>("/api/library");
     apiAvailable = true;
-    if (stateVersion === libraryStateVersion) await receiveLibrary(next, force);
+    if (stateVersion === libraryStateVersion && !boot?.active) await receiveLibrary(next, force);
   } catch (error) {
     apiAvailable = false;
     updateStatus();
@@ -363,6 +484,11 @@ async function loadLibrary(force = false) {
   );
 }
 async function receiveLibrary(next: MusicLibrary, force = false) {
+  const previousScan = library.scan;
+  const scanCompleted = libraryReceived && !next.scan.running && !next.scan.error &&
+    !!next.scan.finishedAt && next.scan.finishedAt !== previousScan.finishedAt;
+  const scanFailed = libraryReceived && previousScan.running && !next.scan.running && !!next.scan.error;
+  libraryReceived = true;
   const previousIntroductionRun = library.introductions;
   const changed =
     JSON.stringify(next.albums) !== JSON.stringify(library.albums) ||
@@ -384,6 +510,11 @@ async function receiveLibrary(next: MusicLibrary, force = false) {
         `专辑介绍查询完成：更新 ${result.updated} 张，未找到可靠资料 ${result.notFound} 张，查询失败 ${result.failed} 张。`,
     );
   }
+  if (scanFailed) notify(`音乐库扫描失败：${next.scan.error}`);
+  if (scanCompleted && !scanRefreshTimer) {
+    notify("音乐库扫描完成，2 秒后自动刷新页面。");
+    scanRefreshTimer = setTimeout(() => location.reload(), 2000);
+  }
 }
 async function applyLibrary() {
   const hadAlbums = albums.length > 0;
@@ -396,9 +527,9 @@ async function applyLibrary() {
     ]);
   const oldVisual = visualKey(albums, genres);
   if (library.albums.length) demo = false;
-  albums = demo ? demoAlbums : library.albums;
+  albums = orderMusicAlbums(demo ? demoAlbums : library.albums, preferences.sortMode);
   genres = demo ? demoGenres : library.genres;
-  setMusicAlbums(albums, genres);
+  setMusicAlbums(albums, genres, preferences.sortMode);
   selected = Math.max(
     0,
     records.findIndex((r) => r.id === previousId),
@@ -410,18 +541,32 @@ async function applyLibrary() {
     ]),
   );
   if (scene && ready && oldVisual !== visualKey(albums, genres)) {
-    await scene.refreshLibrary(selected);
-    scene.setMode(mode);
+    const reopen = presentation.openingOrDetail;
+    libraryRebuilding = true;
+    libraryIntent = undefined;
+    presentation.reset();
+    detailTransition.hide(true);
+    browseTransition.hide(true);
+    try { await scene.refreshLibrary(selected); }
+    finally { libraryRebuilding = false; }
+    const intent = libraryIntent as LibraryIntent | undefined;
+    libraryIntent = undefined;
+    scene.setMode("archive");
+    if (intent && "index" in intent)
+      select(intent.index, intent.navigation, intent.openAfter);
+    else if ((intent ? intent.mode === "detail" : reopen) && albums.length)
+      presentation.open();
+    else showBrowseSurface();
   }
-  if (!albums.length) mode = "archive";
+  if (!albums.length) presentation.reset();
   stage.dataset.mode = mode;
   $("#music-empty").hidden = albums.length > 0;
   // Ordinary index refreshes must not reveal a page while its peer is exiting.
   if (!ready || !hadAlbums || !albums.length) {
     if (albums.length && mode === "archive") browseTransition.show(true);
     else browseTransition.hide(true);
-    if (albums.length && mode === "detail") detailTransition.show(true);
-    else detailTransition.hide(true);
+    // Detail is revealed exclusively by the camera completion gate.
+    if (presentation.phase !== "detail") detailTransition.hide(true);
     $("#music-browse").inert = !albums.length || mode !== "archive" || !!panel;
     $("#music-detail").inert = !albums.length || mode !== "detail" || !!panel;
     $("#music-browse").setAttribute(
@@ -479,9 +624,11 @@ function updateSelection(navigation?: ArchiveNavigation) {
   textMotion.update(
     {
       number: idx + 1,
+      total: files.length,
+      genresTotal: archiveColumns.length,
       code: selected + 1,
       genreIndex: location.lane + 1,
-      genre: genreName(a.genreId),
+      genre: archiveColumns[location.lane],
       genreName: archiveColumns[location.lane],
       format: demo
         ? "DEMO"
@@ -500,24 +647,18 @@ function updateSelection(navigation?: ArchiveNavigation) {
   );
   titleMotion.update(a.title, animated);
   $("#selection-title").title = a.title;
-  $("#selection-total").textContent = String(files.length).padStart(2, "0");
-  $("#genre-total").textContent = String(archiveColumns.length).padStart(
-    2,
-    "0",
-  );
   tickMotion.update(
-    files.map((index) => ({ index, title: records[index].title })),
+    files.map((index) => ({ index, id: records[index].id, title: records[index].title })),
     selected,
     preferences.reduced,
+    navigation,
   );
   $("#detail-card-id").textContent =
     `ALBUM / ${String(selected + 1).padStart(3, "0")}`;
   // Initial data is shown immediately; warm its reels once it is interactive.
   if (!animated && selectionMotionEnabled()) syncSelectionMotion();
 }
-function select(index: number, navigation?: ArchiveNavigation) {
-  if (!records.length || !ready) return;
-  if (mode === "detail") setMode("archive");
+function commitSelection(index: number, navigation?: ArchiveNavigation) {
   selected = wrap(index, records.length);
   columnMemory.set(
     archiveColumns[fileLocation(selected).lane],
@@ -531,11 +672,33 @@ function select(index: number, navigation?: ArchiveNavigation) {
       : "tick",
   );
 }
+function select(index: number, navigation?: ArchiveNavigation, openAfter = presentation.openingOrDetail) {
+  if (!records.length || !ready || boot?.active || index < 0) return;
+  const pending = libraryRebuilding && libraryIntent && "index" in libraryIntent
+    ? libraryIntent : presentation.pendingSelection;
+  const previous = pending?.navigation;
+  if (pending) {
+    // Coalesced key presses still reach the matching physical loop cell.
+    navigation = previous && navigation && "axis" in previous && "axis" in navigation && previous.axis === navigation.axis
+      ? { axis: navigation.axis, direction: previous.direction + navigation.direction }
+      : undefined;
+  }
+  if (libraryRebuilding) {
+    libraryIntent = { index: wrap(index, records.length), navigation, openAfter };
+    return;
+  }
+  presentation.select({ index: wrap(index, records.length), navigation }, openAfter);
+}
+function navigationSelection() {
+  if (libraryRebuilding && libraryIntent && "index" in libraryIntent) return libraryIntent.index;
+  return presentation.pendingSelection?.index ?? selected;
+}
 function stepAlbum(direction: number) {
   if (!records.length) return;
-  const files = columnFiles(fileLocation(selected).lane);
+  const cursor = navigationSelection();
+  const files = columnFiles(fileLocation(cursor).lane);
   if (files.length > 1)
-    select(files[wrap(files.indexOf(selected) + direction, files.length)], {
+    select(files[wrap(files.indexOf(cursor) + direction, files.length)], {
       axis: "row",
       direction,
     });
@@ -543,7 +706,7 @@ function stepAlbum(direction: number) {
 function stepGenre(direction: number) {
   if (!records.length || archiveColumns.length < 2) return;
   const lane = wrap(
-    fileLocation(selected).lane + direction,
+    fileLocation(navigationSelection()).lane + direction,
     archiveColumns.length,
   );
   const remembered = columnMemory.get(archiveColumns[lane]);
@@ -554,49 +717,11 @@ function stepGenre(direction: number) {
   });
 }
 function setMode(next: "archive" | "detail") {
-  if ((next === "detail" && !currentAlbum()) || mode === next) return;
-  mode = next;
-  stage.dataset.mode = next;
-  const browse = $("#music-browse"),
-    detail = $("#music-detail");
-  browse.inert = next !== "archive" || !!panel;
-  detail.inert = next !== "detail" || !!panel;
-  browse.setAttribute("aria-hidden", String(next !== "archive"));
-  detail.setAttribute("aria-hidden", String(next !== "detail"));
-  syncSelectionMotion();
-  scene?.setMode(next);
-  effects.setScene(next);
-  effects.play(next === "detail" ? "open" : "back");
+  if (boot?.active) return;
+  if (libraryRebuilding) { libraryIntent = { mode: next }; return; }
   if (next === "detail") {
-    activeTab = "tracks";
-    renderDetail();
-    // Set the incoming body before revealing its surface, rather than waiting
-    // for the next Three.js frame to overwrite the previous visit's opacity.
-    const content = $("#album-detail-content");
-    const visibility = scene?.detailVisibility ?? 0;
-    content.style.opacity = String(visibility);
-    content.style.transform = `translateY(${(1 - visibility) * 16}px)`;
-    content.inert = visibility < 0.1;
-    pendingDetailFocus = true;
-    browseTransition.hide(preferences.reduced, () => {
-      if (mode !== "detail") return;
-      detailTransition.show(preferences.reduced);
-      // Hidden elements have no text geometry and ignore scroll resets.
-      // Every opening starts at the top with its own text reveal.
-      content.scrollTop = 0;
-      documentDecryption.reset(content, preferences.reduced);
-    });
-  } else {
-    pendingDetailFocus = false;
-    tabTransition.cancel();
-    detailTransition.hide(preferences.reduced, () => {
-      if (mode !== "archive" || !albums.length) return;
-      browseTransition.show(preferences.reduced);
-      syncSelectionMotion();
-      if (!panel && !boot?.active)
-        $("[data-action=open]").focus({ preventScroll: true });
-    });
-  }
+    if (currentAlbum()) presentation.open();
+  } else presentation.back();
 }
 function syncTabIndicator(animate = true) {
   const button = document.querySelector<HTMLElement>(`#tab-${activeTab}`);
@@ -659,7 +784,7 @@ function renderDetail() {
     sameAlbum = detailIdentity === a.id,
     scroll = sameAlbum ? article.scrollTop : 0;
   detailIdentity = a.id;
-  article.innerHTML = `<div class="detail-overline"><span>ALBUM ${String(selected + 1).padStart(3, "0")}</span></div>
+  article.innerHTML = `<div class="detail-overline"><span>ALBUM ${String(selected + 1).padStart(3, "0")}</span><div class="detail-album-navigation" role="group" aria-label="切换专辑"><button data-action="prev" aria-label="上一张专辑">↑ 上一张</button><button data-action="next" aria-label="下一张专辑">下一张 ↓</button></div></div>
     <h1 title="${esc(a.title)}">${albumTitleMarkup(a.title)}</h1><p class="detail-artist">${esc(a.artist)}${a.offline ? '<span class="offline-badge">目录离线</span>' : ""}</p>
     <div class="album-facts">${fields.map(([name, value]) => `<div><small>${name}</small><span>${esc(String(value))}</span></div>`).join("")}</div>
     <div class="music-tabs" role="tablist" aria-label="专辑信息"><button role="tab" id="tab-tracks" data-tab="tracks" tabindex="${activeTab === "tracks" ? 0 : -1}" aria-selected="${activeTab === "tracks"}" aria-controls="album-tab-content"><span>01</span> 歌单</button><button role="tab" id="tab-about" data-tab="about" tabindex="${activeTab === "about" ? 0 : -1}" aria-selected="${activeTab === "about"}" aria-controls="album-tab-content"><span>02</span> 专辑介绍</button><i class="music-tab-indicator" aria-hidden="true"></i></div>
@@ -684,7 +809,7 @@ function trackList(a: MusicAlbum, discs: number) {
           ? `<div class="disc-heading">DISC ${String(discNo).padStart(2, "0")}</div>`
           : "";
       disc = discNo;
-      return `${head}<button class="track-row" data-track="${esc(t.id)}" ${a.offline ? "disabled" : ""} aria-label="播放 ${esc(t.title)}"><span class="track-number">${String(t.trackNumber || index + 1).padStart(2, "0")}</span><span class="track-name"><strong>${esc(t.title)}</strong><small>${esc(t.artist)}</small></span><span class="track-format">${esc(t.format)}${!t.browserPlayable ? '<i title="需要兼容的播放内核"> ↗</i>' : ""}</span><span class="track-duration">${time(t.duration)}</span><span class="track-play">▷</span></button>`;
+      return `${head}<button class="track-row" data-track="${esc(t.id)}" ${a.offline ? "disabled" : ""} aria-label="播放 ${esc(t.title)}"><span class="track-number">${String(t.trackNumber || index + 1).padStart(2, "0")}</span><span class="track-name"><strong>${esc(t.title)}</strong><small>${esc(t.artist)}</small></span><span class="track-format">${esc(t.format)}${!t.browserPlayable ? '<i title="需要兼容的播放内核"> ↗</i>' : ""}</span><span class="track-duration">${time(t.duration)}</span></button>`;
     })
     .join("")}</div>${producerBlock(a)}`;
 }
@@ -792,20 +917,26 @@ function updatePlayingRows() {
       const active = row.dataset.track === playerState?.currentTrack?.id;
       row.classList.toggle("playing", active);
       row.setAttribute("aria-current", String(active));
-      const glyph = row.querySelector(".track-play");
-      if (glyph) glyph.textContent = active && playerState.playing ? "Ⅱ" : "▷";
     });
 }
 let lastPlayerError = "";
+const transportTitleMotion = setupTransportTitle(
+  $("#transport-track"),
+  $("#transport-track-label"),
+);
+transportTitleMotion.setReduced(preferences.reduced);
 player.subscribe((state) => {
   playerState = state;
+  const titleVisible = !!state.currentTrack &&
+    (state.transport === "playing" || state.transport === "paused" || state.transport === "loading");
+  transportTitleMotion.update(state.currentTrack?.title ?? "", titleVisible);
   $("#play-pause").setAttribute("aria-pressed", String(state.playing));
   $("#play-pause").setAttribute(
     "aria-label",
-    state.playing ? "正在播放" : "播放",
+    state.playing ? "暂停" : "播放",
   );
   $("#play-pause").title = state.currentTrack
-    ? `${state.playing ? "正在播放" : "播放"}：${state.currentTrack.title}`
+    ? `${state.playing ? "暂停" : "播放"}：${state.currentTrack.title}`
     : "播放当前专辑";
   if (state.error && state.error !== lastPlayerError) notify(state.error);
   lastPlayerError = state.error || "";
@@ -814,12 +945,14 @@ player.subscribe((state) => {
 
 let panelFocus: HTMLElement | null = null;
 let panelTransition: SurfaceTransition | undefined,
-  panelClosing = false;
+  panelClosing = false,
+  pendingPanelAfter: (() => void) | undefined;
 function closePanel(after?: () => void) {
   if (!panel) {
     after?.();
     return;
   }
+  pendingPanelAfter = after;
   if (panelClosing) return;
   panelClosing = true;
   panelTransition?.hide(preferences.reduced, () => {
@@ -835,15 +968,18 @@ function closePanel(after?: () => void) {
       $("#three-scene"),
     ])
       node.inert = false;
-    $("#music-browse").inert = mode !== "archive";
-    $("#music-detail").inert = mode !== "detail";
+    $("#music-browse").inert = presentation.phase !== "archive";
+    $("#music-detail").inert = presentation.phase !== "detail";
     panelFocus?.focus({ preventScroll: true });
-    after?.();
+    const next = pendingPanelAfter;
+    pendingPanelAfter = undefined;
+    next?.();
   });
 }
 function openPanel(next: Panel) {
   if (!next) return closePanel();
   panelTransition?.dispose();
+  pendingPanelAfter = undefined;
   panelClosing = false;
   if (!panel) panelFocus = document.activeElement as HTMLElement;
   panel = next;
@@ -876,7 +1012,7 @@ function openPanel(next: Panel) {
 }
 function renderLibraryPanel() {
   $("#panel-body").innerHTML =
-    `<p class="panel-intro">每个专辑文件夹是一张卡片。封面优先读取文件夹图片，其次读取音乐文件中的内嵌封面。</p><label class="field-label" for="music-roots">音乐文件夹<span>多个目录各占一行</span></label><textarea id="music-roots" rows="3" placeholder="/Users/你的用户名/Music">${esc(library.roots.map((r) => r.path).join("\n"))}</textarea><div class="panel-actions"><button class="primary-button" data-action="scan">保存目录并扫描 ↗</button><button data-action="rescan">重新扫描</button></div><div id="scan-status" class="scan-status"></div><div class="library-metrics"><div><b>${library.albums.length}</b><span>专辑</span></div><div><b>${library.albums.reduce((n, a) => n + a.tracks.length, 0)}</b><span>曲目</span></div><div><b>${library.genres.filter((g) => library.albums.some((a) => a.genreId === g.id)).length}</b><span>流派</span></div></div><section class="panel-section"><h3>在线资料与本地分类</h3><p>向 MusicBrainz 查询专辑名称与艺术家，补充流派和制作人员；音乐文件留在本机。已有资料使用缓存，人工分类优先保留。</p><button data-action="enrich-library" class="text-button">补充缺失的在线资料 ↗</button><button data-action="edit-genres" class="text-button">编辑流派归并规则 ↗</button></section><section class="panel-section"><h3>封面显示</h3><p>方形、竖版、横版封面均保持原始比例，完整放入卡片正面。没有封面时显示专辑名称占位，不使用其他专辑的图片。</p>${!library.albums.length ? '<button data-action="demo" class="text-button">查看演示封面 ↗</button>' : ""}</section>`;
+    `<p class="panel-intro">根目录中的每首单曲各是一张卡片，优先使用自身内嵌封面。子文件夹按专辑展示，优先使用文件夹封面。</p><label class="field-label" for="music-roots">音乐文件夹<span>多个目录各占一行</span></label><textarea id="music-roots" rows="3" placeholder="/Users/你的用户名/Music">${esc(library.roots.map((r) => r.path).join("\n"))}</textarea><div class="panel-actions"><button class="primary-button" data-action="scan">保存目录并扫描 ↗</button><button data-action="rescan">重新扫描</button></div><div id="scan-status" class="scan-status"></div><div class="library-metrics"><div><b>${library.albums.length}</b><span>专辑</span></div><div><b>${library.albums.reduce((n, a) => n + a.tracks.length, 0)}</b><span>曲目</span></div><div><b>${library.genres.filter((g) => library.albums.some((a) => a.genreId === g.id)).length}</b><span>流派</span></div></div><section class="panel-section"><h3>在线资料与本地分类</h3><p>向 MusicBrainz 查询专辑名称与艺术家，补充流派和制作人员；音乐文件留在本机。已有资料使用缓存，人工分类优先保留。</p><button data-action="enrich-library" class="text-button">补充缺失的在线资料 ↗</button><button data-action="edit-genres" class="text-button">编辑流派归并规则 ↗</button></section><section class="panel-section"><h3>封面显示</h3><p>方形、竖版、横版封面均保持原始比例，完整放入卡片正面。没有封面时显示专辑名称占位，不使用其他专辑的图片。</p>${!library.albums.length ? '<button data-action="demo" class="text-button">查看演示封面 ↗</button>' : ""}</section>`;
   updateScanStatus();
   const configSection = document.createElement("section");
   configSection.className = "panel-section";
@@ -943,10 +1079,11 @@ function renderSearchResults() {
 function renderSettingsPanel() {
   $("#panel-body").innerHTML =
     `<section class="panel-section"><h3>外观主题</h3><div class="theme-cards">${(["day", "night"] as Theme[]).map((t) => `<button data-theme="${t}" aria-pressed="${preferences.theme === t}" class="${t}"><i></i><strong>${themeNames[t]}</strong><span>${t === "day" ? "暖白玻璃与日光" : "极简星空与透光白卡"}</span></button>`).join("")}</div></section>
+    <section class="panel-section"><h3>音乐库排列</h3><label class="settings-row"><span>排列方式<small>切换后自动刷新页面</small></span><select id="music-sort" aria-label="音乐库排列方式">${(["genre", "artist", "album"] as MusicSortMode[]).map((value) => `<option value="${value}" ${preferences.sortMode === value ? "selected" : ""}>${sortLabels[value].name}</option>`).join("")}</select></label><p>按歌手时，同一歌手的专辑放在同一列；按专辑名时，按拼音或字母顺序排列，每 12 张一列。</p></section>
     <section class="panel-section" id="introduction-settings"><h3>专辑介绍</h3><p>从公开百科查询并更新专辑介绍，附上资料来源。介绍保存在本机，不需要配置 MusicBrainz 联系信息；音乐文件不会上传。</p><p id="introduction-coverage"></p><button class="primary-button" id="introduction-refresh" data-action="introductions-library">查询 / 更新专辑介绍 ↗</button><progress id="introduction-progress" aria-label="专辑介绍查询进度" max="1" value="0" hidden></progress><p id="introduction-status" class="scan-status" role="status" aria-live="polite"></p><details id="introduction-missing" hidden><summary></summary><ul></ul></details></section>
     ${qualityMarkup(renderQuality)}
-    <section class="panel-section"><h3>动效与显示</h3><label class="settings-row"><span>减少动态效果<small>简化镜头、文字加载和页签过渡</small></span><input type="checkbox" id="reduced-motion" ${preferences.reduced ? "checked" : ""}></label><button class="text-button" data-action="fullscreen">切换全屏 ↗</button><button class="text-button" data-action="replay">重播开场 ↗</button></section>
-    <section class="panel-section"><h3>声音</h3><label class="settings-row"><span>歌曲音量</span><input type="range" id="volume" aria-label="歌曲音量" min="0" max="100" value="${Math.round(preferences.volume * 100)}"></label><label class="settings-row"><span>界面音效<small>玻璃卡片与终端操作</small></span><input type="checkbox" id="sound-setting" ${preferences.sound ? "checked" : ""}></label><label class="settings-row"><span>音效音量</span><input type="range" id="sound-volume" aria-label="音效音量" min="0" max="100" value="${Math.round(preferences.soundVolume * 100)}"></label><label class="settings-row"><span>氛围 BGM<small>专辑开始前淡出，停止后淡入</small></span><input type="checkbox" id="bgm-setting" ${preferences.bgm ? "checked" : ""}></label><label class="settings-row"><span>BGM 音量</span><input type="range" id="bgm-volume" aria-label="BGM 音量" min="0" max="100" value="${Math.round(preferences.bgmVolume * 100)}"></label><button class="text-button" data-action="sound-preview">试听界面音效 ↗</button><p>当前使用浏览器播放本地音乐。DSD 输出及 Windows foobar2000 内核将在后续阶段接入。</p></section>
+    <section class="panel-section"><h3>动效与显示</h3><label class="settings-row"><span>减少动态效果<small>简化镜头、文字加载和页签过渡</small></span><input type="checkbox" id="reduced-motion" ${preferences.reduced ? "checked" : ""}></label><button class="text-button" data-action="fullscreen">切换全屏 ↗</button></section>
+    <section class="panel-section"><h3>声音</h3><label class="settings-row"><span>歌曲音量</span><input type="range" id="volume" aria-label="歌曲音量" min="0" max="100" value="${Math.round(preferences.volume * 100)}"></label><label class="settings-row"><span>界面音效<small>玻璃卡片与终端操作</small></span><input type="checkbox" id="sound-setting" ${preferences.sound ? "checked" : ""}></label><label class="settings-row"><span>音效音量</span><input type="range" id="sound-volume" aria-label="音效音量" min="0" max="100" value="${Math.round(preferences.soundVolume * 100)}"></label><label class="settings-row"><span>氛围 BGM<small>专辑开始前淡出，停止后淡入</small></span><input type="checkbox" id="bgm-setting" ${preferences.bgm ? "checked" : ""}></label><label class="settings-row"><span>BGM 音量</span><input type="range" id="bgm-volume" aria-label="BGM 音量" min="0" max="100" value="${Math.round(preferences.bgmVolume * 100)}"></label><button class="text-button" data-action="sound-preview">试听界面音效 ↗</button><p>当前版本支持 macOS，使用浏览器播放本地音乐。DSF / DFF 暂不支持播放，其他格式取决于浏览器解码能力。</p></section>
     <section class="panel-section"><h3>原版与资源</h3><a href="/?original=1&scene=archive" target="_blank" rel="noopener">打开原版档案界面 ↗</a><p><a href="/fonts/MiSans-license.pdf" target="_blank" rel="noopener">MiSans 字体许可 ↗</a></p></section>`;
   updateQuality();
   updateIntroductionStatus();
@@ -973,6 +1110,11 @@ async function editGenres() {
   }
 }
 async function scan(saveRoots = false) {
+  if (scanSubmitting || library.scan.running) return;
+  scanSubmitting = true;
+  clearTimeout(scanRefreshTimer);
+  scanRefreshTimer = undefined;
+  ++libraryStateVersion;
   try {
     const roots = saveRoots
       ? $<HTMLTextAreaElement>("#music-roots")
@@ -980,11 +1122,16 @@ async function scan(saveRoots = false) {
           .map((s) => s.trim())
           .filter(Boolean)
       : undefined;
-    await request("/api/library/scan", roots ? { roots } : {});
+    const next = await request<MusicLibrary>("/api/library/scan", roots ? { roots } : {});
+    ++libraryStateVersion; // Discard polls started before this accepted scan.
     notify("开始扫描音乐库，已有专辑可以继续浏览。");
-    await loadLibrary(true);
+    await receiveLibrary(next);
+    clearTimeout(pollTimer);
+    pollTimer = setTimeout(() => void loadLibrary(), 600);
   } catch (error) {
     notify((error as Error).message);
+  } finally {
+    scanSubmitting = false;
   }
 }
 async function enrich(one = false) {
@@ -1046,6 +1193,7 @@ function playAlbum(id?: string) {
 }
 
 document.addEventListener("click", (e) => {
+  if (boot?.active) return;
   const target = (e.target as HTMLElement).closest<HTMLElement>(
     "button, [data-action]",
   );
@@ -1060,14 +1208,16 @@ document.addEventListener("click", (e) => {
     return;
   }
   if (target.dataset.select) {
-    select(Number(target.dataset.select));
+    const rulerStep = Number(target.dataset.rulerStep);
+    select(Number(target.dataset.select),
+      target.dataset.rulerStep !== undefined && Number.isInteger(rulerStep)
+        ? { axis: "row", direction: rulerStep } : undefined);
     return;
   }
   if (target.dataset.album) {
     const id = target.dataset.album;
     closePanel(() => {
-      select(records.findIndex((r) => r.id === id));
-      setMode("detail");
+      select(records.findIndex((r) => r.id === id), undefined, true);
     });
     return;
   }
@@ -1108,9 +1258,6 @@ document.addEventListener("click", (e) => {
     case "model-viewer":
       // Temporarily unavailable for the simplified CD shell (no inner assembly).
       break;
-    case "replay":
-      closePanel(() => boot?.replay());
-      break;
     case "sound-preview":
       effects.play("page-open");
       break;
@@ -1137,8 +1284,7 @@ document.addEventListener("click", (e) => {
       openPanel("search");
       break;
     case "play-pause":
-      if (!playerState.playing)
-        playerState.currentTrack ? void player.toggle() : playAlbum();
+      playerState.currentTrack ? void player.toggle() : playAlbum();
       break;
     case "stop":
       player.stop();
@@ -1234,6 +1380,13 @@ document.addEventListener("input", (e) => {
 });
 document.addEventListener("change", (e) => {
   const el = e.target as HTMLInputElement;
+  if (el.id === "music-sort" && ["genre", "artist", "album"].includes(el.value)) {
+    if (preferences.sortMode === el.value) return;
+    preferences.sortMode = el.value as MusicSortMode;
+    savePrefs();
+    location.reload();
+    return;
+  }
   if (el.id === "quality-preset") {
     preferences.quality = el.value as QualityPreset;
     renderQuality = normalizeQuality(qualityPresets[preferences.quality]);
@@ -1259,6 +1412,7 @@ document.addEventListener("change", (e) => {
   }
   if (el.id === "reduced-motion") {
     preferences.reduced = el.checked;
+    transportTitleMotion.setReduced(el.checked);
     if (el.checked) {
       browseTransition.finish();
       detailTransition.finish();
@@ -1276,7 +1430,8 @@ document.addEventListener("change", (e) => {
   }
 });
 document.addEventListener("keydown", (e) => {
-  if (viewer?.isOpen || boot?.active) return;
+  if (boot?.active) return;
+  if (viewer?.isOpen) return;
   if (e.key === "Escape") {
     panel ? closePanel() : setMode("archive");
     return;
@@ -1360,28 +1515,22 @@ let lastFrame = 0,
 function frame(ms: number) {
   if (!document.hidden && scene) {
     const opening = boot?.update(ms / 1000);
-    if (opening) effects.updateBoot(opening.appTime, false);
-    if (!viewer?.isOpen && (!opening || opening.renderScene))
-      scene.update(ms / 1000, opening?.cinema);
+    if (!viewer?.isOpen) scene.update(ms / 1000, opening?.cinema);
     viewer?.update(ms / 1000);
-    if (mode === "detail" && !boot?.active) {
+    if (!viewer?.isOpen && !boot?.active) presentation.update();
+    const phase = presentation.phase;
+    if (stage.dataset.presentation !== phase) stage.dataset.presentation = phase;
+    const cameraPhase = scene.musicPresentationPhase;
+    if (stage.dataset.cameraPhase !== cameraPhase) stage.dataset.cameraPhase = cameraPhase;
+    if (presentation.phase === "detail") {
       documentDecryption.update(
         ms / 1000,
         scene.decryptionFrame,
         preferences.reduced,
-        scene.detailVisibility >= 0.5 && !viewer?.isOpen,
+        !viewer?.isOpen,
       );
-      const content = $("#album-detail-content");
-      content.style.opacity = String(scene.detailVisibility);
-      content.style.transform = `translateY(${(1 - scene.detailVisibility) * 16}px)`;
-      content.inert = scene.detailVisibility < 0.1;
-      if (
-        pendingDetailFocus &&
-        scene.detailVisibility >= 0.1 &&
-        !panel &&
-        !viewer?.isOpen
-      ) {
-        content.focus({ preventScroll: true });
+      if (pendingDetailFocus && !panel && !viewer?.isOpen) {
+        $("#album-detail-content").focus({ preventScroll: true });
         pendingDetailFocus = false;
       }
     }
@@ -1430,46 +1579,38 @@ async function start() {
     ready = true;
     $("#three-scene canvas").setAttribute(
       "aria-label",
-      "三维专辑阵列，左右切流派，上下切专辑",
+      `三维专辑阵列，左右切${sortLabel.column}，上下切专辑`,
     );
     stage.classList.toggle("reduce-motion", preferences.reduced);
     await scene.refreshLibrary(selected);
     scene.setTheme(preferences.theme);
     scene.setQuality(renderQuality);
     scene.setReduced(preferences.reduced);
-    scene.setMode("archive");
     scene.onSelect = (index, cell) => {
-      if (mode === "archive" && !panel && !boot?.active)
+      if (!boot?.active && presentation.phase === "archive" && !panel)
         select(index, cell ? { cell } : undefined);
     };
     scene.onNavigate = (axis, direction) => {
-      if (mode === "archive" && !panel && !boot?.active)
+      if (!boot?.active && presentation.phase === "archive" && !panel)
         axis === "lane" ? stepGenre(direction) : stepAlbum(direction);
     };
     $("#music-loading").remove();
     updateSelection();
+    if (albums.length && new URLSearchParams(location.search).get("scene") !== "archive") {
+      boot?.start(performance.now() / 1000);
+    } else {
+      scene.showMusicArchiveImmediately(performance.now() / 1000);
+      effects.setScene("archive");
+      if (albums.length) showBrowseSurface();
+      else browseTransition.hide(true);
+      $("#music-browse").inert = !albums.length;
+      $("#music-browse").setAttribute("aria-hidden", String(!albums.length));
+    }
     syncSelectionMotion();
-    boot = new MusicBoot(stage, {
-      onStart: () => {
-        if (mode === "detail") setMode("archive");
-        syncSelectionMotion();
-        scene!.setMode("hidden");
-        effects.setScene("boot");
-        effects.restartBoot();
-      },
-      onComplete: (reason) => {
-        scene!.setMode("archive");
-        effects.setScene("archive");
-        if (reason === "complete" && albums.length) setMode("detail");
-        syncSelectionMotion();
-      },
-      reduced: () => preferences.reduced,
-      album: () => currentAlbum(),
+    requestAnimationFrame((ms) => {
+      stage.classList.add("theme-motion-ready");
+      frame(ms);
     });
-    const initialScene = new URLSearchParams(location.search).get("scene");
-    if (initialScene === "detail" && albums.length) setMode("detail");
-    else if (initialScene !== "archive") boot.start();
-    requestAnimationFrame(frame);
   } catch (error) {
     console.error(error);
     $("#music-loading").innerHTML =
@@ -1489,5 +1630,12 @@ Object.assign(window, {
       return player.state;
     },
     stats: () => scene?.getStats(),
+    get presentation() {
+      return { phase: presentation.phase, cameraPhase: scene?.musicPresentationPhase,
+        pendingIndex: presentation.pendingSelection?.index,
+        menuVisible: !$("#music-detail").hidden,
+        cameraReady: scene?.musicPresentationReady,
+        archiveReady: scene?.musicArchiveReady };
+    },
   },
 });

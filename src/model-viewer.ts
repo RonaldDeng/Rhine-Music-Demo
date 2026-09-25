@@ -4,6 +4,7 @@ import { createArchiveLighting } from "./archive-lighting";
 import { damp } from "./motion";
 import { ViewerCameraMotion } from "./viewer-camera";
 import { ViewerAlbumCover } from "./viewer-album-cover";
+import { MUSIC_MODEL } from "./music-model";
 import type { MusicAlbum } from "./music-types";
 import { ViewerTheme, type ViewerThemeName } from "./viewer-theme";
 import { normalizeQuality, type RenderQuality } from "./render-quality";
@@ -25,6 +26,12 @@ const PARTS = [
   { id: "optical-core", label: "光学核心", en: "OPTICAL CORE", depth: -0.15 },
   { id: "substrate", label: "信息基板", en: "SUBSTRATE", depth: -1.1 },
   { id: "carrier", label: "背板与框架", en: "CARRIER", depth: -2.05 },
+] as const;
+
+const MUSIC_PARTS = [
+  { id: "cover", label: "封面与玻璃面板", en: "COVER PRINT / GLASS", depth: 0.85 },
+  { id: "substrate", label: "半透明背板", en: "GLASS BACKING", depth: -0.35 },
+  { id: "carrier", label: "薄边框", en: "THIN GLASS FRAME", depth: -1.05 },
 ] as const;
 
 type ModelSource = { model: THREE.Group; dispose: () => void; setClarity?: (value: number) => void };
@@ -67,6 +74,8 @@ export class ModelViewer {
   private onClose: () => void;
   private provider?: () => Promise<ModelSource>;
   isOpen = false;
+
+  private get parts() { return this.album ? MUSIC_PARTS : PARTS; }
 
   constructor(
     parent: HTMLElement,
@@ -181,6 +190,9 @@ export class ModelViewer {
     this.renderer.domElement.setAttribute("aria-label", `${album ? "专辑" : "档案"}三维模型：拖动旋转，方向键平移，滚轮或加减键缩放，Home 复位`);
     this.root.querySelector(".viewer-heading > span")!.textContent = album ? "RHINE MUSIC / ALBUM OBJECT" : "RHINE LAB / OBJECT STUDY";
     this.root.querySelector('[data-viewer="explode"]')!.innerHTML = `<span>＋</span>${album ? "拆解专辑" : "拆解档案"}`;
+    this.root.querySelector(".viewer-parts")!.innerHTML = `<div>ASSEMBLY / 装配结构</div>${this.parts.map((part, index) => `<p><span>${String(index + 1).padStart(2, "0")}</span><strong>${part.label}</strong><small>${part.en}</small></p>`).join("")}`;
+    this.root.querySelector('[data-viewer="clear"]')!.textContent = album ? "清晰玻璃" : "清晰";
+    this.root.querySelector('[data-viewer="frosted"]')!.textContent = album ? "柔化玻璃" : "磨砂";
     this.updateHeading();
     this.attachAlbumCover();
   }
@@ -277,7 +289,7 @@ export class ModelViewer {
         return;
       }
       this.source = source;
-      for (const part of PARTS) {
+      for (const part of this.parts) {
         const group = new THREE.Group();
         group.name = part.id;
         this.groups.set(part.id, group);
@@ -287,7 +299,7 @@ export class ModelViewer {
         group?.add(child);
       }
       for (const group of this.groups.values()) source.model.add(group);
-      source.model.position.set(0, -1.85, 0);
+      source.model.position.set(0, this.album ? -MUSIC_MODEL.center.y : -1.85, 0);
       this.scene.add(source.model);
       if (this.theme) this.themeAppearance.applyModel(source.model);
       this.attachAlbumCover();
@@ -612,7 +624,7 @@ export class ModelViewer {
         this.spread = { value: this.targetSpread, velocity: 0 };
         this.setStatus(this.targetSpread ? "已拆解" : "已组装");
       }
-      for (const part of PARTS) {
+      for (const part of this.parts) {
         this.groups.get(part.id)!.position.z = part.depth * this.spread.value;
       }
     }

@@ -1,5 +1,7 @@
 # 声音重设计与验证
 
+> 历史开发记录：以下范围、参数与验证结论对应文中所述阶段，不代表 V0.1.0 本次已复验；发布版差异见 [验证记录说明](README.md)。
+
 日期：2026-09-09。交付为原创配乐「Observatory / 观测室」、16 种程序合成音效、原片短音重构的逐字输入音效及实际终端集成。
 
 ## 依据和边界
@@ -80,11 +82,11 @@
 
 检查增加 25Hz 密集输入的波形峰值、所有字段首字、文字恢复不误触发，以及正常播放时输入帧数量。此前玻璃卡片交互继续使用独立的合成音色。
 
-```powershell
-node scripts/extract-typing-audio.mjs 'D:/Program Files/CueWeave/resources/tools/ffmpeg.exe'
-node scripts/render-audio.mjs 'D:/Program Files/CueWeave/resources/tools/ffmpeg.exe'
-node scripts/analyze-reference-audio.mjs 'D:/Program Files/CueWeave/resources/tools/ffmpeg.exe'
+```sh
+node scripts/extract-typing-audio.mjs ffmpeg
+node scripts/render-audio.mjs ffmpeg
+node scripts/analyze-reference-audio.mjs ffmpeg
 npm run build
 ```
 
-生成器仅需要 Node.js；参数为本机 FFmpeg 路径，用于 Ogg / MP3 编码。省略参数仍可在 `.tools/audio-render/` 生成无损 WAV 母带。生成脚本使用固定随机种子；同一工具版本可复现。生产只读取原创三轨 Ogg（合计约 1.6MB），试听 MP3 另约 1.3MB，不在运行时加载原视频。
+生成器仅需要 Node.js；参数为可在 PATH 中找到的 FFmpeg 命令名或其路径，用于 Ogg / MP3 编码。省略参数仍可在 `.tools/audio-render/` 生成无损 WAV 母带。生成脚本使用固定随机种子；同一工具版本可复现。生产只读取原创三轨 Ogg（合计约 1.6MB），试听 MP3 另约 1.3MB，不在运行时加载原视频。
