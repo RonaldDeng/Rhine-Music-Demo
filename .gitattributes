@@ -1,0 +1,31 @@
+# Source files are LF everywhere so a Windows checkout fingerprints, builds and
+# runs exactly like the macOS original. Windows scripts must stay CRLF.
+* text=auto eol=lf
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+*.command text eol=lf
+*.sh text eol=lf
+
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.icns binary
+*.glb binary
+*.blend binary
+*.woff2 binary
+*.pdf binary
+*.mp3 binary
+*.wav binary
+*.flac binary
+*.ogg binary
+*.m4a binary
+*.zip binary
+*.exe binary
+*.dll binary
+
+# Shipped with the Windows package; Notepad on Windows 10 shows LF-only text poorly.
+windows/*.txt text eol=crlf

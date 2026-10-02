@@ -51,7 +51,8 @@ import { MusicBoot } from "./music-boot";
 import { viewportLayout } from "./viewport-layout";
 
 type Theme = "day" | "night";
-type Panel = "library" | "search" | "settings" | null;
+type Panel = "library" | "search" | "settings" | "online" | null;
+type Shelf = "local" | "online";
 const $ = <T extends HTMLElement = HTMLElement>(selector: string) =>
   document.querySelector<T>(selector)!;
 const svg = (path: string) =>
@@ -67,6 +68,7 @@ const icons = {
     '<path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="2.5" fill="var(--surface)"/><circle cx="15" cy="17" r="2.5" fill="var(--surface)"/>',
   ),
   folder: svg('<path d="M3 7V5h6l2 2h10v13H3Z"/>'),
+  globe: svg('<circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c2.6 2.4 3.9 5.2 3.9 8.5s-1.3 6.1-3.9 8.5c-2.6-2.4-3.9-5.2-3.9-8.5s1.3-6.1 3.9-8.5Z"/>'),
 };
 const read = <T>(key: string, fallback: T): T => {
   try {
@@ -130,6 +132,43 @@ const sortLabel = sortLabels[preferences.sortMode];
 let libraryReceived = false,
   scanSubmitting = false;
 let scanRefreshTimer: ReturnType<typeof setTimeout> | undefined;
+// ---- Online shelf: a second, separate album shelf and list (never merged with the local library) ----
+interface OnlineHit {
+  ref: string;
+  title: string;
+  artist: string;
+  year?: number;
+  license?: string;
+  url?: string;
+  added: boolean;
+}
+interface OnlineSourceInfo {
+  sources: { id: string; name: string; configured: boolean }[];
+  subsonic?: { baseUrl: string; username: string; passwordSet: boolean };
+  error?: string;
+}
+const onlineSearch = {
+  source: "internetarchive",
+  q: "",
+  collection: "",
+  page: 1,
+  hasMore: false,
+  items: [] as OnlineHit[],
+  busy: false,
+  error: "",
+};
+let onlineSources: OnlineSourceInfo | undefined;
+let onlineSnapshot: MusicLibrary | undefined;
+const onlineCollections: [string, string][] = [
+  ["", "全部音频"],
+  ["opensource_audio", "社区上传音频"],
+  ["netlabels", "网络厂牌（多为 CC 授权）"],
+  ["etree", "现场录音"],
+  ["78rpm", "78 转老唱片"],
+];
+const onlineEmptyHtml =
+  '<small>YOUR ONLINE SHELF</small><h1>在线专辑架还是空的。</h1><p>从 Internet Archive 或你自己的音乐服务搜索专辑，加入后它们会出现在这座独立的专辑架上。</p><button data-action="online">搜索在线专辑 ↗</button><button data-action="shelf-local" class="subtle">返回本地专辑架</button>';
+let shelf: Shelf = "local";
 let library: MusicLibrary = {
   version: 1,
   albums: [],
@@ -193,6 +232,7 @@ stage.innerHTML = `
     <nav class="music-topnav" aria-label="音乐终端导航">
       <button data-action="library" aria-label="音乐库">${icons.folder}<span>音乐库</span></button>
       <button data-action="search" aria-label="搜索">${icons.search}<span>搜索</span></button>
+      <button data-action="online" aria-label="在线曲库" aria-pressed="false">${icons.globe}<span>在线</span></button>
       <div class="theme-switch" aria-label="主题">${(["day", "night"] as Theme[]).map((t) => `<button data-theme="${t}" aria-label="${themeNames[t]}主题" aria-pressed="${preferences.theme === t}"><i class="theme-dot ${t}"></i><span>${themeNames[t]}</span></button>`).join("")}</div>
       <button data-action="settings" class="icon-button" aria-label="播放与画质设置">${icons.settings}</button>
       <div class="minimal-transport" role="group" aria-label="音乐播放"><button type="button" data-action="locate-playing" id="transport-track" class="transport-track" aria-label="定位当前歌曲" aria-hidden="true" disabled><span id="transport-track-label"></span></button><button data-action="play-pause" id="play-pause" aria-label="播放" aria-pressed="false"><span class="transport-glyph transport-play" aria-hidden="true">${icons.play}</span><span class="transport-glyph transport-pause" aria-hidden="true">${icons.pause}</span></button><button data-action="stop" id="stop-playback" aria-label="停止">${icons.stop}</button></div>
@@ -220,10 +260,11 @@ stage.innerHTML = `
     <article id="album-detail-content" tabindex="-1"></article>
   </section>
   <div id="music-empty" class="music-empty" hidden><small>YOUR PRIVATE COLLECTION</small><h1>让音乐进入这座档案馆。</h1><p>选择本地音乐文件夹，专辑封面会出现在每一张卡片上。</p><button data-action="library">设置音乐文件夹 ↗</button><button data-action="demo" class="subtle">先查看演示封面</button></div>
-  <div class="music-bottomline"><span>LOCAL COLLECTION <i>·</i> <span id="library-count">0 ALBUMS</span></span><span id="runtime-info">THREE.JS / LOCAL</span></div>
+  <div class="music-bottomline"><span id="collection-line">LOCAL COLLECTION <i>·</i> <span id="library-count">0 ALBUMS</span></span><span id="runtime-info">THREE.JS / LOCAL</span></div>
   <div id="music-panel-root"></div><div id="music-toast" role="status" aria-live="polite"></div>
   <div id="music-loading"><span class="loading-orbit"></span><strong>OPENING THE ARCHIVE</strong><small>正在载入三维专辑架</small></div>
 `;
+const localEmptyHtml = $("#music-empty").innerHTML;
 const titleMotion = setupMusicTitleLayout(stage);
 const textMotion = setupMusicTextMotion(stage);
 // Keep the previous navigation available while the ruler version is on trial.
@@ -481,7 +522,9 @@ async function loadLibrary(force = false) {
   refreshing = true;
   const stateVersion = libraryStateVersion;
   try {
-    const next = await request<MusicLibrary>("/api/library");
+    const next = await request<MusicLibrary>(
+      shelf === "online" ? "/api/online/library" : "/api/library",
+    );
     apiAvailable = true;
     if (stateVersion === libraryStateVersion && !boot?.active) await receiveLibrary(next, force);
   } catch (error) {
@@ -610,6 +653,7 @@ async function applyLibrary() {
   updateStatus();
 }
 function updateStatus() {
+  updateShelfChrome();
   const n = library.albums.length,
     tracks = library.albums.reduce((sum, a) => sum + a.tracks.length, 0);
   const label = !apiAvailable
@@ -872,9 +916,9 @@ function trackList(a: MusicAlbum, discs: number) {
 }
 function albumAbout(a: MusicAlbum) {
   return `<section class="album-about"><small>ABOUT THIS ALBUM</small>
-    ${a.description ? `<p>${esc(a.description)}</p>${a.descriptionSource ? `<a class="text-button" href="${esc(a.descriptionSource.url)}" target="_blank" rel="noopener">来源：${esc(a.descriptionSource.name)} ↗</a>${a.descriptionSource.license ? `<small class="introduction-license">${esc(a.descriptionSource.license)}</small>` : ""}` : ""}` : `<h3>专辑介绍待补充</h3><p>从公开百科核对专辑与歌手后读取介绍，附上来源并保存在本机。无法确认对应专辑时保留空白。</p>`}
-    ${!demo ? `<button data-action="introduction-album" class="text-button" ${introductionsStarting || library.introductions?.running ? "disabled" : ""}>${a.description ? "更新" : "查询"}专辑介绍 ↗</button><p class="introduction-feedback" data-introduction-feedback="${esc(a.id)}" role="status">${esc(introductionAlbumStatus(a))}</p>` : ""}
-    <div class="source-note"><span>本地目录</span><code>${esc(a.folder)}</code></div><div class="genre-tags">${a.rawGenres.map((g) => `<span>${esc(g)}</span>`).join("")}</div></section>${producerBlock(a)}`;
+    ${a.description ? `<p>${esc(a.description)}</p>${a.descriptionSource ? `<a class="text-button" href="${esc(a.descriptionSource.url)}" target="_blank" rel="noopener">来源：${esc(a.descriptionSource.name)} ↗</a>${a.descriptionSource.license ? `<small class="introduction-license">${esc(a.descriptionSource.license)}</small>` : ""}` : ""}` : shelf === "online" ? onlineNote(a) : `<h3>专辑介绍待补充</h3><p>从公开百科核对专辑与歌手后读取介绍，附上来源并保存在本机。无法确认对应专辑时保留空白。</p>`}
+    ${!demo && shelf === "local" ? `<button data-action="introduction-album" class="text-button" ${introductionsStarting || library.introductions?.running ? "disabled" : ""}>${a.description ? "更新" : "查询"}专辑介绍 ↗</button><p class="introduction-feedback" data-introduction-feedback="${esc(a.id)}" role="status">${esc(introductionAlbumStatus(a))}</p>` : ""}
+    <div class="source-note"><span>${shelf === "online" ? "来源" : "本地目录"}</span><code>${esc(a.folder)}</code></div><div class="genre-tags">${a.rawGenres.map((g) => `<span>${esc(g)}</span>`).join("")}</div></section>${producerBlock(a)}`;
 }
 function introductionAlbumStatus(a: MusicAlbum) {
   const lookup = a.introduction;
@@ -965,7 +1009,7 @@ function updateIntroductionStatus() {
   }
 }
 function producerBlock(a: MusicAlbum) {
-  return `<section class="producer-section"><div><small>ALBUM CREDITS / 制作人员</small>${!demo ? '<button data-action="enrich-album">补充在线资料 ↗</button>' : ""}</div>${a.producers.length ? `<dl>${a.producers.map((p) => `<div><dt>${esc(p.role)}${p.trackTitle ? ` · ${esc(p.trackTitle)}` : ""}</dt><dd>${esc(p.name)}</dd></div>`).join("")}</dl>` : "<p>暂无制作资料。本地标签优先，MusicBrainz 资料可查询并缓存在本机。</p>"}${a.online?.status === "uncertain" ? "<p>找到多个可能的发行版本，暂未自动采用资料。</p>" : ""}${a.online?.error ? `<p>${esc(a.online.error)}</p>` : ""}</section>`;
+  return `<section class="producer-section"><div><small>ALBUM CREDITS / 制作人员</small>${!demo && shelf === "local" ? '<button data-action="enrich-album">补充在线资料 ↗</button>' : ""}</div>${a.producers.length ? `<dl>${a.producers.map((p) => `<div><dt>${esc(p.role)}${p.trackTitle ? ` · ${esc(p.trackTitle)}` : ""}</dt><dd>${esc(p.name)}</dd></div>`).join("")}</dl>` : "<p>暂无制作资料。本地标签优先，MusicBrainz 资料可查询并缓存在本机。</p>"}${a.online?.status === "uncertain" ? "<p>找到多个可能的发行版本，暂未自动采用资料。</p>" : ""}${a.online?.error ? `<p>${esc(a.online.error)}</p>` : ""}</section>`;
 }
 function updatePlayingRows() {
   document
@@ -1045,6 +1089,7 @@ function openPanel(next: Panel) {
     library: ["MUSIC LIBRARY", "本地音乐库"],
     search: ["FIND MUSIC", "搜索专辑与歌曲"],
     settings: ["SYSTEM SETTINGS", "播放与画质"],
+    online: ["ONLINE LIBRARY", "在线曲库"],
   };
   $("#music-panel-root").innerHTML =
     `<div class="music-panel-scrim" data-action="dismiss-panel"><section class="music-panel" role="dialog" aria-modal="true" aria-labelledby="music-panel-title"><div class="panel-heading"><div><small>${titles[next][0]}</small><h2 id="music-panel-title">${titles[next][1]}</h2></div><button data-action="close-panel" aria-label="关闭">×</button></div><div id="panel-body"></div></section></div>`;
@@ -1063,6 +1108,7 @@ function openPanel(next: Panel) {
   if (next === "library") renderLibraryPanel();
   if (next === "search") renderSearchPanel();
   if (next === "settings") renderSettingsPanel();
+  if (next === "online") void renderOnlinePanel();
   (
     document.querySelector<HTMLElement>("#album-search") ||
     $("#music-panel-root button")
@@ -1070,7 +1116,7 @@ function openPanel(next: Panel) {
 }
 function renderLibraryPanel() {
   $("#panel-body").innerHTML =
-    `<p class="panel-intro">根目录中的每首单曲各是一张卡片，优先使用自身内嵌封面。子文件夹按专辑展示，优先使用文件夹封面。</p><label class="field-label" for="music-roots">音乐文件夹<span>多个目录各占一行</span></label><textarea id="music-roots" rows="3" placeholder="/Users/你的用户名/Music">${esc(library.roots.map((r) => r.path).join("\n"))}</textarea><div class="panel-actions"><button class="primary-button" data-action="scan">保存目录并扫描 ↗</button><button data-action="rescan">重新扫描</button></div><div id="scan-status" class="scan-status"></div><div class="library-metrics"><div><b>${library.albums.length}</b><span>专辑</span></div><div><b>${library.albums.reduce((n, a) => n + a.tracks.length, 0)}</b><span>曲目</span></div><div><b>${library.genres.filter((g) => library.albums.some((a) => a.genreId === g.id)).length}</b><span>流派</span></div></div><section class="panel-section"><h3>在线资料与本地分类</h3><p>向 MusicBrainz 查询专辑名称与艺术家，补充流派和制作人员；音乐文件留在本机。已有资料使用缓存，人工分类优先保留。</p><button data-action="enrich-library" class="text-button">补充缺失的在线资料 ↗</button><button data-action="edit-genres" class="text-button">编辑流派归并规则 ↗</button></section><section class="panel-section"><h3>封面显示</h3><p>方形、竖版、横版封面均保持原始比例，完整放入卡片正面。没有封面时显示专辑名称占位，不使用其他专辑的图片。</p>${!library.albums.length ? '<button data-action="demo" class="text-button">查看演示封面 ↗</button>' : ""}</section>`;
+    `<p class="panel-intro">根目录中的每首单曲各是一张卡片，优先使用自身内嵌封面。子文件夹按专辑展示，优先使用文件夹封面。</p><label class="field-label" for="music-roots">音乐文件夹<span>多个目录各占一行</span></label><textarea id="music-roots" rows="3" placeholder="${/Windows/i.test(navigator.userAgent) ? "C:\\Users\\你的用户名\\Music" : "/Users/你的用户名/Music"}">${esc(library.roots.map((r) => r.path).join("\n"))}</textarea><div class="panel-actions"><button class="primary-button" data-action="scan">保存目录并扫描 ↗</button><button data-action="rescan">重新扫描</button></div><div id="scan-status" class="scan-status"></div><div class="library-metrics"><div><b>${library.albums.length}</b><span>专辑</span></div><div><b>${library.albums.reduce((n, a) => n + a.tracks.length, 0)}</b><span>曲目</span></div><div><b>${library.genres.filter((g) => library.albums.some((a) => a.genreId === g.id)).length}</b><span>流派</span></div></div><section class="panel-section"><h3>在线资料与本地分类</h3><p>向 MusicBrainz 查询专辑名称与艺术家，补充流派和制作人员；音乐文件留在本机。已有资料使用缓存，人工分类优先保留。</p><button data-action="enrich-library" class="text-button">补充缺失的在线资料 ↗</button><button data-action="edit-genres" class="text-button">编辑流派归并规则 ↗</button></section><section class="panel-section"><h3>封面显示</h3><p>方形、竖版、横版封面均保持原始比例，完整放入卡片正面。没有封面时显示专辑名称占位，不使用其他专辑的图片。</p>${!library.albums.length ? '<button data-action="demo" class="text-button">查看演示封面 ↗</button>' : ""}</section>`;
   updateScanStatus();
   const configSection = document.createElement("section");
   configSection.className = "panel-section";
@@ -1105,6 +1151,300 @@ function updateScanStatus() {
           ? `上次扫描 ${new Date(library.scan.finishedAt).toLocaleString("zh-CN")}`
           : "尚未扫描音乐目录。");
 }
+function licenseLabel(url?: string) {
+  if (!url) return "未标注授权，使用前请查看条目页";
+  const cc = /creativecommons\.org\/(licenses|publicdomain)\/([a-z-]+)\/([\d.]+)/i.exec(url);
+  if (!cc) return "授权见条目页";
+  const kind = cc[2].toLowerCase();
+  if (cc[1].toLowerCase() === "publicdomain")
+    return kind === "zero" ? "CC0 公有领域" : kind === "mark" ? "公有领域标识" : "公有领域";
+  return `CC ${kind.toUpperCase()} ${cc[3]}`;
+}
+function onlineNote(a: MusicAlbum) {
+  if (a.genreId === "online-subsonic")
+    return `<h3>来自你自己的音乐服务</h3><p>音频与封面通过本机服务转发，不会保存到本机。</p>`;
+  const lines = (a.localNote || "").split("\n").filter(Boolean);
+  const link = lines.find((line) => /^https?:\/\//.test(line));
+  const license = lines.find((line) => line.startsWith("授权："))?.slice(3);
+  return `<h3>来自 ${esc(a.folder)}</h3><p>${esc(licenseLabel(license))}。具体授权以条目页面为准。</p>${link ? `<a class="text-button" href="${esc(link)}" target="_blank" rel="noopener noreferrer">条目页面 ↗</a>` : ""}`;
+}
+function updateShelfChrome() {
+  stage.dataset.shelf = shelf;
+  const line = document.querySelector("#collection-line");
+  const text = shelf === "online" ? "ONLINE COLLECTION " : "LOCAL COLLECTION ";
+  if (line?.firstChild?.nodeType === Node.TEXT_NODE && line.firstChild.textContent !== text)
+    line.firstChild.textContent = text;
+  document
+    .querySelector('.music-topnav [data-action="online"]')
+    ?.setAttribute("aria-pressed", String(shelf === "online"));
+  const empty = $("#music-empty");
+  if (empty.dataset.shelf !== shelf) {
+    empty.dataset.shelf = shelf;
+    empty.innerHTML = shelf === "online" ? onlineEmptyHtml : localEmptyHtml;
+  }
+}
+async function switchShelf(next: Shelf, reveal?: { albumId: string; trackId?: string }) {
+  if (!ready || boot?.active) return;
+  if (next === shelf) {
+    if (reveal) revealAlbum(reveal.albumId, reveal.trackId);
+    else closePanel();
+    return;
+  }
+  closePanel(() => {
+    void (async () => {
+      try {
+        const snapshot = await request<MusicLibrary>(
+          next === "online" ? "/api/online/library" : "/api/library",
+        );
+        // Drop any in-flight refresh of the other shelf, and do not mistake the swap for a finished scan.
+        libraryStateVersion++;
+        clearTimeout(pollTimer);
+        shelf = next;
+        demo = false;
+        libraryReceived = false;
+        if (next === "online") onlineSnapshot = snapshot;
+        await receiveLibrary(snapshot, true);
+        pollTimer = setTimeout(() => void loadLibrary(), 12000);
+        if (reveal) revealAlbum(reveal.albumId, reveal.trackId);
+        else notify(next === "online" ? "已切换到在线专辑架。" : "已切换到本地专辑架。");
+      } catch (error) {
+        notify((error as Error).message);
+      }
+    })();
+  });
+}
+function locatePlaying(albumId: string, trackId: string) {
+  // The playing song may belong to the other shelf; follow it there.
+  const wanted: Shelf = albumId.startsWith("online-") ? "online" : "local";
+  if (wanted !== shelf) void switchShelf(wanted, { albumId, trackId });
+  else revealAlbum(albumId, trackId, { reuseOpenAlbum: true });
+}
+async function renderOnlinePanel() {
+  $("#panel-body").innerHTML =
+    `<p class="panel-intro">在线专辑存放在独立的「在线专辑架」和下面的列表里，不会混入本地音乐库。只有你点击搜索、加入或播放时才会联网；音频和封面由本机服务转发，浏览器不会直接访问第三方站点。</p><div id="online-body"><p class="scan-status">正在读取在线曲库…</p></div>`;
+  try {
+    const [sources, snapshot] = await Promise.all([
+      request<OnlineSourceInfo>("/api/online/sources"),
+      request<MusicLibrary>("/api/online/library"),
+    ]);
+    onlineSources = sources;
+    onlineSnapshot = snapshot;
+  } catch (error) {
+    const body = document.querySelector("#online-body");
+    if (panel === "online" && body) body.innerHTML = `<p class="scan-status" role="alert">${esc((error as Error).message)}</p>`;
+    return;
+  }
+  if (panel !== "online") return;
+  $("#online-body").innerHTML = `<div class="genre-filters shelf-switch" id="shelf-switch"></div>
+    <section class="panel-section"><h3>搜索在线曲库</h3>
+      <div class="online-search">
+        <select id="online-source" aria-label="来源"></select>
+        <select id="online-collection" aria-label="合集">${onlineCollections.map(([value, name]) => `<option value="${value}" ${onlineSearch.collection === value ? "selected" : ""}>${esc(name)}</option>`).join("")}</select>
+        <input class="album-search" id="online-query" type="search" placeholder="专辑、歌手、关键词…" aria-label="搜索在线专辑" value="${esc(onlineSearch.q)}">
+        <button class="primary-button" data-action="online-search">搜索 ↗</button>
+      </div>
+      <p class="online-note" id="online-source-note"></p>
+      <div id="online-results"></div></section>
+    <section class="panel-section"><h3>我的在线专辑 <small id="online-count"></small></h3><div id="online-list"></div></section>
+    <section class="panel-section" id="online-subsonic"></section>`;
+  drawShelfSwitch();
+  drawOnlineSources();
+  drawOnlineResults();
+  drawOnlineList();
+  drawSubsonicForm();
+}
+function drawShelfSwitch() {
+  const el = document.querySelector("#shelf-switch");
+  if (!el) return;
+  const count = onlineSnapshot?.albums.length ?? 0;
+  el.innerHTML = `<button data-action="shelf-local" class="${shelf === "local" ? "active" : ""}" aria-pressed="${shelf === "local"}">本地专辑架</button><button data-action="shelf-online" class="${shelf === "online" ? "active" : ""}" aria-pressed="${shelf === "online"}">在线专辑架 · ${count}</button>`;
+}
+function drawOnlineSources() {
+  const select = document.querySelector<HTMLSelectElement>("#online-source");
+  if (!select) return;
+  const configured = !!onlineSources?.sources.find((source) => source.id === "subsonic")?.configured;
+  if (!configured && onlineSearch.source === "subsonic") onlineSearch.source = "internetarchive";
+  select.innerHTML = `<option value="internetarchive">Internet Archive</option>${configured ? '<option value="subsonic">自有音乐服务</option>' : ""}`;
+  select.value = onlineSearch.source;
+  updateOnlineSourceNote();
+}
+function updateOnlineSourceNote() {
+  const source = document.querySelector<HTMLSelectElement>("#online-source")?.value;
+  const ia = source !== "subsonic";
+  const collection = document.querySelector<HTMLElement>("#online-collection");
+  if (collection) collection.hidden = !ia;
+  const note = document.querySelector("#online-source-note");
+  if (note)
+    note.textContent = ia
+      ? "搜索 archive.org 的公开音频。每个条目的授权各不相同，未标注授权的内容请自行确认能否使用。"
+      : "搜索你自己的音乐服务，音频由你的服务提供。";
+}
+function drawOnlineResults() {
+  const el = document.querySelector("#online-results");
+  if (!el) return;
+  const s = onlineSearch;
+  if (s.error) {
+    el.innerHTML = `<p class="scan-status" role="alert">${esc(s.error)}</p>`;
+    return;
+  }
+  if (s.busy && !s.items.length) {
+    el.innerHTML = '<p class="scan-status">正在搜索…</p>';
+    return;
+  }
+  if (!s.q) {
+    el.innerHTML = "";
+    return;
+  }
+  if (!s.items.length) {
+    el.innerHTML = '<div class="no-results">没有找到匹配的专辑。</div>';
+    return;
+  }
+  const showLicense = s.source === "internetarchive";
+  el.innerHTML =
+    s.items
+      .map(
+        (hit) =>
+          `<div class="online-row"><span class="result-copy"><strong>${esc(hit.title)}</strong><small>${esc(hit.artist)}${hit.year ? ` · ${hit.year}` : ""}${showLicense ? ` · ${esc(licenseLabel(hit.license))}` : ""}</small>${hit.url && /^https?:\/\//.test(hit.url) ? `<a class="online-link" href="${esc(hit.url)}" target="_blank" rel="noopener noreferrer">条目页 ↗</a>` : ""}</span><button data-action="online-add" data-ref="${esc(hit.ref)}" ${hit.added ? "disabled" : ""}>${hit.added ? "已加入" : "加入 ↗"}</button></div>`,
+      )
+      .join("") +
+    (s.hasMore
+      ? `<button class="text-button" data-action="online-more" ${s.busy ? "disabled" : ""}>${s.busy ? "正在搜索…" : "更多结果 ↗"}</button>`
+      : "");
+}
+function drawOnlineList() {
+  const el = document.querySelector("#online-list");
+  if (!el) return;
+  const items = onlineSnapshot?.albums ?? [];
+  const count = document.querySelector("#online-count");
+  if (count) count.textContent = items.length ? `· ${items.length}` : "";
+  el.innerHTML = items.length
+    ? items
+        .map(
+          (a) =>
+            `<div class="online-row has-cover"><span class="result-cover">${cover(a)}</span><span class="result-copy"><strong>${esc(a.title)}</strong><small>${esc(a.artist)} · ${a.tracks.length} 首 · ${esc(a.folder)}</small></span><span class="online-buttons"><button data-action="online-reveal" data-id="${esc(a.id)}">在架上查看 ↗</button><button data-action="online-remove" data-id="${esc(a.id)}">移除</button></span></div>`,
+        )
+        .join("")
+    : '<p class="scan-status">还没有在线专辑。搜索后点“加入”，它们会出现在在线专辑架上。</p>';
+}
+function drawSubsonicForm() {
+  const el = document.querySelector("#online-subsonic");
+  if (!el) return;
+  const config = onlineSources?.subsonic;
+  el.innerHTML = `<h3>自有音乐服务（Subsonic 兼容）</h3><p>连接你自己的 Navidrome、Jellyfin（Subsonic 插件）、Airsonic 等服务。地址、账号和密码只保存在本机数据目录的 online.json（密码为明文，建议使用只给播放器用的账号），不会写进项目文件夹。</p>
+    <label class="field-label" for="subsonic-url">服务地址<span>例如 http://192.168.1.10:4533</span></label><input id="subsonic-url" type="text" autocomplete="off" spellcheck="false" value="${esc(config?.baseUrl || "")}">
+    <label class="field-label online-gap" for="subsonic-user">账号</label><input id="subsonic-user" type="text" autocomplete="off" spellcheck="false" value="${esc(config?.username || "")}">
+    <label class="field-label online-gap" for="subsonic-pass">密码<span>${config?.passwordSet ? "已保存，留空则保持不变" : ""}</span></label><input id="subsonic-pass" type="password" autocomplete="new-password">
+    <div class="panel-actions"><button class="primary-button" data-action="subsonic-save">保存</button><button data-action="subsonic-test">测试连接</button>${config ? '<button data-action="subsonic-clear">清除</button>' : ""}</div>
+    <p id="subsonic-status" class="scan-status" role="status" aria-live="polite"></p>`;
+}
+function subsonicFields() {
+  const read = (id: string) => document.querySelector<HTMLInputElement>(id)?.value ?? "";
+  return { baseUrl: read("#subsonic-url").trim(), username: read("#subsonic-user").trim(), password: read("#subsonic-pass") };
+}
+async function subsonicAction(kind: "save" | "test" | "clear") {
+  const status = document.querySelector("#subsonic-status");
+  const say = (text: string) => {
+    if (status) status.textContent = text;
+  };
+  say(kind === "test" ? "正在连接…" : "");
+  try {
+    if (kind === "test") {
+      const result = await request<{ version: string; server?: string }>("/api/online/subsonic/test", subsonicFields());
+      say(`连接成功${result.server ? `：${result.server}` : ""}（协议 ${result.version || "未知"}）。`);
+      return;
+    }
+    onlineSources = await request<OnlineSourceInfo>("/api/online/subsonic", kind === "clear" ? { clear: true } : subsonicFields());
+    drawOnlineSources();
+    drawSubsonicForm();
+    const after = document.querySelector("#subsonic-status");
+    if (after) after.textContent = kind === "clear" ? "已清除保存的服务信息。" : "已保存。现在可以在上方“来源”里选择自有音乐服务。";
+  } catch (error) {
+    say((error as Error).message);
+  }
+}
+async function runOnlineSearch(more = false) {
+  const s = onlineSearch;
+  if (s.busy) return;
+  if (!more) {
+    const q = document.querySelector<HTMLInputElement>("#online-query")?.value.trim() ?? "";
+    if (!q) {
+      notify("请输入搜索词。");
+      return;
+    }
+    s.source = document.querySelector<HTMLSelectElement>("#online-source")?.value || "internetarchive";
+    s.collection = s.source === "internetarchive" ? document.querySelector<HTMLSelectElement>("#online-collection")?.value || "" : "";
+    s.q = q;
+    s.page = 1;
+    s.items = [];
+    s.hasMore = false;
+  } else s.page += 1;
+  s.busy = true;
+  s.error = "";
+  drawOnlineResults();
+  try {
+    const params = new URLSearchParams({ source: s.source, q: s.q, page: String(s.page) });
+    if (s.collection) params.set("collection", s.collection);
+    const result = await request<{ items: OnlineHit[]; total: number | null; hasMore?: boolean }>(`/api/online/search?${params}`);
+    s.items = more ? [...s.items, ...result.items] : result.items;
+    s.hasMore = result.hasMore ?? (result.total !== null && s.page * 20 < result.total && result.items.length > 0);
+  } catch (error) {
+    s.error = (error as Error).message;
+    if (more) s.page -= 1;
+  } finally {
+    s.busy = false;
+    drawOnlineResults();
+  }
+}
+async function refreshOnlineList() {
+  onlineSnapshot = await request<MusicLibrary>("/api/online/library");
+  if (shelf === "online") {
+    libraryStateVersion++;
+    await receiveLibrary(onlineSnapshot, true);
+  }
+  if (panel === "online") {
+    drawOnlineList();
+    drawShelfSwitch();
+  }
+}
+async function addOnlineAlbum(button: HTMLElement) {
+  const hit = onlineSearch.items.find((item) => item.ref === button.dataset.ref);
+  if (!hit) return;
+  button.setAttribute("disabled", "");
+  button.textContent = "正在加入…";
+  try {
+    const result = await request<{ title: string; tracks: number }>("/api/online/albums", { source: onlineSearch.source, ref: hit.ref });
+    hit.added = true;
+    notify(`已加入在线专辑架：${result.title}（${result.tracks} 首）。`);
+    await refreshOnlineList();
+  } catch (error) {
+    notify((error as Error).message);
+  }
+  drawOnlineResults();
+}
+async function removeOnlineAlbum(id: string) {
+  const removed = onlineSnapshot?.albums.find((a) => a.id === id);
+  try {
+    await request("/api/online/albums/remove", { id });
+    if (removed)
+      for (const hit of onlineSearch.items)
+        if (hit.title === removed.title && hit.artist === removed.artist) hit.added = false;
+    await refreshOnlineList();
+    drawOnlineResults();
+    notify("已从在线专辑架移除。");
+  } catch (error) {
+    notify((error as Error).message);
+  }
+}
+document.addEventListener("change", (event) => {
+  if ((event.target as HTMLElement).id === "online-source") updateOnlineSourceNote();
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Enter" && (event.target as HTMLElement).id === "online-query") {
+    event.preventDefault();
+    void runOnlineSearch();
+  }
+});
+
 function renderSearchPanel() {
   $("#panel-body").innerHTML =
     `<input class="album-search" id="album-search" type="search" placeholder="专辑、歌曲、歌手、流派…" aria-label="搜索专辑与歌曲"><div class="genre-filters"><button data-filter="" class="active">全部</button>${genres
@@ -1294,7 +1634,7 @@ document.addEventListener("click", (e) => {
     return;
   }
   const action = target.dataset.action;
-  if (["library", "search", "settings"].includes(action || "")) {
+  if (["library", "search", "settings", "online"].includes(action || "")) {
     searchGenre = "";
     openPanel(action as Panel);
     return;
@@ -1302,9 +1642,35 @@ document.addEventListener("click", (e) => {
   switch (action) {
     case "locate-playing": {
       const track = playerState.currentTrack;
-      if (track) revealAlbum(track.albumId, track.id, { reuseOpenAlbum: true });
+      if (track) locatePlaying(track.albumId, track.id);
       break;
     }
+    case "shelf-local":
+      void switchShelf("local");
+      break;
+    case "shelf-online":
+      void switchShelf("online");
+      break;
+    case "online-search":
+      void runOnlineSearch();
+      break;
+    case "online-more":
+      void runOnlineSearch(true);
+      break;
+    case "online-add":
+      void addOnlineAlbum(target);
+      break;
+    case "online-remove":
+      if (target.dataset.id) void removeOnlineAlbum(target.dataset.id);
+      break;
+    case "online-reveal":
+      if (target.dataset.id) void switchShelf("online", { albumId: target.dataset.id });
+      break;
+    case "subsonic-save":
+    case "subsonic-test":
+    case "subsonic-clear":
+      void subsonicAction(action!.slice("subsonic-".length) as "save" | "test" | "clear");
+      break;
     case "close-panel":
     case "dismiss-panel":
       closePanel();
