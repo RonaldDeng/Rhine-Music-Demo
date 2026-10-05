@@ -3,6 +3,7 @@ import { promises as fs } from 'node:fs'
 import path from 'node:path'
 import { parseFile } from 'music-metadata'
 import { AlbumIntroductionProvider } from './album-introductions.mjs'
+import { cleanRootInput, isFullyQualified, isIgnoredDirectory, isIgnoredFile, isInside, renameWithRetry, samePath } from './platform.mjs'
 
 const AUDIO_EXTENSIONS = new Set(['.flac', '.wav', '.m4a', '.mp4', '.alac', '.dsf', '.dff', '.mp3', '.aac', '.aiff', '.aif', '.ogg', '.opus'])
 const BROWSER_EXTENSIONS = new Set(['.flac', '.wav', '.m4a', '.mp4', '.mp3', '.aac', '.ogg', '.opus'])
@@ -36,7 +37,7 @@ export async function writeJsonAtomic(file, value) {
   const temporary = `${file}.${randomUUID()}.tmp`
   try {
     await fs.writeFile(temporary, `${JSON.stringify(value, null, 2)}\n`, { mode: 0o600 })
-    await fs.rename(temporary, file)
+    await renameWithRetry(temporary, file)
   } finally {
     await fs.rm(temporary, { force: true })
   }
@@ -77,10 +78,14 @@ export function resolveGenre(album, rules) {
   return inputs.length ? `source-${hash(normalized(inputs[0]))}` : 'unclassified'
 }
 
-export function safeRootList(roots) {
-  if (!Array.isArray(roots) || roots.length > 64 || roots.some((root) => typeof root !== 'string' || !path.isAbsolute(root) || root.includes('\0'))) throw new Error('音乐目录必须是绝对路径数组（最多 64 个）')
+export function safeRootList(input) {
+  const roots = Array.isArray(input) ? input.map(cleanRootInput) : input
+  if (!Array.isArray(roots) || roots.length > 64 || roots.some((root) => typeof root !== 'string' || !isFullyQualified(root))) throw new Error('音乐目录必须是绝对路径数组（最多 64 个）')
+  // Windows paths are case-insensitive: D:\Music and d:\music are the same root.
+  const distinct = []
+  for (const root of roots.map((root) => path.resolve(root))) if (!distinct.some((seen) => samePath(seen, root))) distinct.push(root)
   // Nested roots would scan the same album twice; keep the highest selected root.
-  return unique(roots.map((root) => path.resolve(root))).filter((root, _, all) => !all.some((parent) => parent !== root && root.startsWith(`${parent}${path.sep}`)))
+  return distinct.filter((root) => !distinct.some((parent) => parent !== root && isInside(parent, root)))
 }
 
 function audioMime(file) {
@@ -92,12 +97,17 @@ export function imageMime(file) {
 }
 
 /** Root-level files are singles; nested folders are albums. Source files stay read-only. */
-async function walkAlbums(root) {
+export async function walkAlbums(root) {
   const folders = []
   const visit = async (folder) => {
-    const entries = await fs.readdir(folder, { withFileTypes: true })
+    let entries
+    try { entries = await fs.readdir(folder, { withFileTypes: true }) } catch (error) {
+      // An unreadable subfolder (permissions, removed meanwhile) must not abort the whole scan.
+      if (folder !== root && ['EACCES', 'EPERM', 'ENOENT', 'ENOTDIR'].includes(error.code)) return
+      throw error
+    }
     entries.sort((a, b) => a.name.localeCompare(b.name, 'zh-CN', { numeric: true }))
-    const files = entries.filter((entry) => entry.isFile())
+    const files = entries.filter((entry) => entry.isFile() && !isIgnoredFile(entry.name))
     const tracks = files.filter((entry) => AUDIO_EXTENSIONS.has(path.extname(entry.name).toLowerCase())).map((entry) => path.join(folder, entry.name))
     if (tracks.length) {
       const images = files.filter((entry) => /\.(png|jpe?g|webp)$/i.test(entry.name))
@@ -116,7 +126,7 @@ async function walkAlbums(root) {
         folders.push({ folder, tracks, cover: images[0] ? path.join(folder, images[0].name) : undefined })
       }
     }
-    for (const entry of entries) if (entry.isDirectory() && !entry.name.startsWith('.')) await visit(path.join(folder, entry.name))
+    for (const entry of entries) if (entry.isDirectory() && !isIgnoredDirectory(entry.name)) await visit(path.join(folder, entry.name))
   }
   await visit(root)
   return folders

@@ -3,10 +3,47 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { promises as fs, createReadStream } from 'node:fs'
 import { MusicLibraryStore, safeRootList } from './music-library.mjs'
+import { canonicalPath, isWindows } from './platform.mjs'
+import { OnlineLibrary, streamRemote } from './online-sources.mjs'
 
-const PROJECT_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
+// Canonical form so the launcher's health probe matches regardless of drive-letter case or junctions.
+const PROJECT_DIR = canonicalPath(path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'))
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.woff': 'font/woff', '.woff2': 'font/woff2', '.glb': 'model/gltf-binary', '.gltf': 'model/gltf+json', '.wav': 'audio/wav', '.mp3': 'audio/mpeg', '.ogg': 'audio/ogg', '.opus': 'audio/ogg', '.ico': 'image/x-icon', '.webmanifest': 'application/manifest+json' }
 const LOOPBACK = new Set(['127.0.0.1', 'localhost', '[::1]'])
+
+// Online shelf API (see online-sources.mjs). Remote addresses never reach the browser: audio and covers are proxied.
+async function onlineApi(online, request, response, route, url) {
+  const get = request.method === 'GET' || request.method === 'HEAD'
+  const post = request.method === 'POST'
+  const text = (value, name) => {
+    if (typeof value !== 'string' || !value || value.length > 300) throw Object.assign(new Error(`${name} 必须是字符串`), { status: 400 })
+    return value
+  }
+  if (route === '/api/online/library' && get) return json(response, 200, await online.snapshot())
+  if (route === '/api/online/sources' && get) return json(response, 200, await online.sources())
+  if (route === '/api/online/subsonic' && post) return json(response, 200, await online.configureSubsonic(await bodyJson(request)))
+  if (route === '/api/online/subsonic/test' && post) return json(response, 200, await online.testSubsonic(await bodyJson(request)))
+  if (route === '/api/online/search' && get) {
+    const aborter = new AbortController()
+    response.once('close', () => aborter.abort())
+    const page = Number(url.searchParams.get('page') ?? 1)
+    const result = await online.search(url.searchParams.get('source') || 'internetarchive', url.searchParams.get('q') ?? '', { page, collection: url.searchParams.get('collection') || undefined, signal: aborter.signal })
+    return json(response, 200, result)
+  }
+  if (route === '/api/online/albums' && post) {
+    const value = await bodyJson(request)
+    return json(response, 200, await online.add(text(value.source, 'source'), text(value.ref, 'ref')))
+  }
+  if (route === '/api/online/albums/remove' && post) return json(response, 200, await online.remove(text((await bodyJson(request)).id, 'id')))
+  const audio = /^\/api\/online\/audio\/([a-zA-Z0-9-]+)$/.exec(route)
+  const artwork = /^\/api\/online\/artwork\/([a-zA-Z0-9-]+)$/.exec(route)
+  if ((audio || artwork) && get) {
+    const found = audio ? await online.trackTarget(audio[1]) : await online.coverTarget(artwork[1])
+    if (!found) return json(response, 404, { error: '在线专辑架中没有此文件' })
+    return await streamRemote(request, response, found.target, { allow: found.allow, kind: audio ? 'audio' : 'image', mime: found.mime, cache: artwork ? 'private, max-age=3600' : 'private, no-cache' })
+  }
+  return json(response, 404, { error: 'API 不存在或请求方法不支持' })
+}
 
 function json(response, status, data) {
   response.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' })
@@ -82,9 +119,12 @@ export async function createMusicServer({
   distDir = path.join(PROJECT_DIR, 'dist'),
   defaultRoots = process.env.MUSIC_ROOTS ? process.env.MUSIC_ROOTS.split(path.delimiter).filter(Boolean) : [],
   store: providedStore,
+  online: providedOnline,
   autoScan = true,
 } = {}) {
   const store = providedStore ?? await new MusicLibraryStore({ dataDir, defaultRoots }).init()
+  // Nothing is read or fetched until the online shelf is first used.
+  const online = providedOnline ?? new OnlineLibrary({ dataDir: store.dataDir ?? dataDir })
   const server = http.createServer(async (request, response) => {
     response.setHeader('X-Content-Type-Options', 'nosniff')
     response.setHeader('Referrer-Policy', 'same-origin')
@@ -94,7 +134,8 @@ export async function createMusicServer({
       const url = new URL(request.url, host)
       if (request.headers.origin && request.headers.origin !== host.origin) return json(response, 403, { error: '不接受跨站点访问本地曲库' })
       const route = decodeURIComponent(url.pathname)
-      if (route.includes('\0') || route.includes('\\')) return json(response, 400, { error: '无效路径' })
+      // On Windows ':' would address NTFS alternate data streams (/index.html::$DATA) or other drives.
+      if (route.includes('\0') || route.includes('\\') || (isWindows && route.includes(':'))) return json(response, 400, { error: '无效路径' })
       const get = request.method === 'GET' || request.method === 'HEAD'
       if (route === '/api/health' && get) return json(response, 200, { service: 'rhine-local-music', projectDir: PROJECT_DIR, pid: process.pid })
       if (route === '/api/library' && get) {
@@ -136,6 +177,7 @@ export async function createMusicServer({
         void store.updateIntroductions({ albumIds: value.albumIds, force: value.force ?? false }).catch(() => {})
         return json(response, 202, store.snapshot())
       }
+      if (route.startsWith('/api/online/')) return await onlineApi(online, request, response, route, url)
       const audio = /^\/api\/audio\/([a-zA-Z0-9-]+)$/.exec(route)
       const artwork = /^\/api\/artwork\/([a-zA-Z0-9-]+)$/.exec(route)
       if ((audio || artwork) && get) {
@@ -167,7 +209,7 @@ export async function createMusicServer({
   })
   server.requestTimeout = 30_000
   if (autoScan) server.once('listening', () => { void store.scan().catch(() => {}) })
-  return { server, store }
+  return { server, store, online }
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
@@ -183,4 +225,6 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   const close = () => { server.close(() => process.exit()); server.closeAllConnections() }
   process.once('SIGINT', close)
   process.once('SIGTERM', close)
+  // Ctrl+Break and console close on Windows; SIGTERM is not delivered there.
+  if (isWindows) process.once('SIGBREAK', close)
 }

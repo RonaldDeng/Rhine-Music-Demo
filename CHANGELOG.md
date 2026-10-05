@@ -2,6 +2,34 @@
 
 本记录区分正式版本、本地开发副本与上游档案终端。早期目录 `RhineLabUI`、`RhineLabUI-Music-v2`、`RhineLabUI-Music-v3` 现统一对应 V0.0.1、V0.0.2、V0.0.3；这些编号不表示补发历史版本，V0.2.0、V0.3.0 是后续独立版本。当前功能与安装方式见 [README](README.md)，当前视觉和交互规则见 [DESIGN](DESIGN.md)。
 
+## V0.3.0 · Windows 适配补丁 · 在线专辑架 · 2026-10-02
+
+在本地音乐库之外新增独立的在线专辑架，不改变本地音乐库、三维专辑架的外观和交互。详见 [docs/ONLINE-LIBRARY.md](docs/ONLINE-LIBRARY.md)。
+
+- 新增顶部「在线」入口和「在线曲库」面板：搜索 Internet Archive 的公开音频，加入后进入独立的「我的在线专辑」列表；点击「在线专辑架」切换到独立的三维专辑架，「本地专辑架」切回。在线专辑不会混入本地索引。
+- 新增 `scripts/online-sources.mjs`：来源接口（搜索、专辑、音频地址、封面地址）、Internet Archive 实现，以及面向自建服务（Navidrome、Jellyfin 的 Subsonic 插件、Airsonic 等）的 Subsonic／OpenSubsonic 客户端（默认关闭，地址与账号在界面填写，只保存在数据目录的 `online.json`）。
+- 新增 `/api/online/*` 接口。音频与封面由本机服务转发并支持 Range，浏览器不直接访问第三方；每个来源有主机白名单，重定向逐跳复查，只放行音频或 JPEG／PNG／GIF／WebP。
+- 条目授权随结果显示（如 CC BY-NC-ND 3.0），未标注授权会明确提示；受限借阅条目不能加入。启动时不联网，只在搜索、加入、播放时访问来源；不下载、不缓存音频。
+- 不包含针对商业音乐平台的播放地址解析器。
+- 点击顶部当前歌名时，若歌曲在另一个专辑架，会自动切换过去再定位。
+- `npm run check:music` 新增 `scripts/check-online-sources.mjs`（10 项，使用本机假服务器，不访问真实互联网）；Windows 包冒烟测试增加在线接口检查（共 10 项）；`package-windows.mjs` 的运行脚本清单加入 `online-sources.mjs`。
+
+## V0.3.0 · Windows 适配补丁 · 2026-10-01
+
+V0.3.0 的补丁：不改变界面、交互和数据格式，让同一份代码在 Windows 10 及更新版本上完整运行。新增 `Rhine-Music-Demo-v0.3.0-Windows.zip`（预编译、自带 Node.js 22 LTS）和 `Rhine Music.exe`。
+
+- 新增 `scripts/platform.mjs`，集中处理平台差异：路径规范化和比较（盘符大小写、`\\?\` 前缀、不区分大小写）、完整路径判定（支持 `C:\`、`C:/` 和 `\\server\share`，拒绝 `\dir` 与 `C:dir`）、npm 调用、默认浏览器、系统文件夹忽略和带重试的 rename。
+- 启动器：Windows 下 `npm` 不再按 macOS 方式直接启动（避免 `npm.cmd` 的 ENOENT／EINVAL），以 `npm-cli.js` 加当前 node 运行；浏览器改用 `rundll32 url.dll,FileProtocolHandler`；后台服务隐藏控制台窗口；服务身份比较按 Windows 路径规则，避免盘符大小写或中文路径造成“端口被其他程序占用”的误判。
+- 构建缓存指纹对路径分隔符和 CRLF／LF 保持一致，Windows 检出不会因行尾差异反复重建；新增 `.gitattributes`（源码 LF，`.bat` 和 `.ps1` CRLF）。
+- 预编译包识别：`dist/.music-build.json` 带 `prebuilt: true` 时只检查运行时依赖和界面文件，不需要 npm；包损坏时给出明确提示而不是静默重装。
+- 服务端：Windows 下拒绝含 `:` 的静态路由（NTFS 备用数据流如 `/index.html::$DATA`、盘符路径）；补充 `SIGBREAK`。目录边界、Origin／Host 校验和只读约束不变。
+- 曲库：目录输入容忍引号、按 Windows 规则去重和判断嵌套（`D:\Music` 与 `d:\music\Live`）；原子写入遇到 `EPERM`／`EBUSY`／`EACCES` 时短暂重试；扫描忽略 `$RECYCLE.BIN`、`System Volume Information` 和 exFAT/FAT 盘上的 `._` 文件；无权限的子文件夹不再中断整个扫描。
+- 界面：音乐库输入框的示例路径在 Windows 浏览器中显示 `C:\Users\你的用户名\Music`。
+- 新增 `启动音乐播放器.bat`、`windows/`（exe 源码、清单、图标脚本、使用说明）、`scripts/package-windows.mjs`（打包）、`scripts/check-platform.mjs` 与 `scripts/check-windows-package.mjs`（检查）；`check:music` 现包含平台与启动器检查。macOS 的 `.command` 启动器和行为保持不变。
+- 启动器：服务因端口被系统保留（Hyper-V／WSL／Docker 的保留端口段，`listen EACCES`）或刚被占用（`EADDRINUSE`）而无法监听时，自动换用下一个端口，不再直接失败。
+- 启动锁：`launcher.lock` 由持有者定时刷新；持有者进程已消失或锁超过 30 秒没有刷新时，下一次启动自动接管，不再要求手动删除；通过 `.takeover` 目录互斥，两个启动器不会互相删除对方的锁。macOS 同样适用。
+- 范围与限制见 [docs/WINDOWS.md](docs/WINDOWS.md)。
+
 ## V0.3.0 · 2026-10-01
 
 基于 V0.2.0 整理的 macOS 源码发行版；主要功能修改与界面回归记录形成于 2026-09-30。发布包为 `Rhine-Music-Demo-v0.3.0-macOS.zip`，解压后的顶层目录为 `V0.3.0/`。

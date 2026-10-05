@@ -53,6 +53,22 @@ npm run music -- --port 5175
 
 </details>
 
+## Windows 使用（V0.3.0 补丁）
+
+另有 **`Rhine-Music-Demo-v0.3.0-Windows.zip`**：面向 Windows 10 及更新版本（64 位）的免安装包，自带 Node.js 运行环境和已构建的界面，**无需安装 Node.js、无需联网、无需构建**。
+
+1. 完整解压，进入 `V0.3.0` 文件夹。
+2. 双击 **`Rhine Music.exe`**（或显示控制台的 `启动音乐播放器.bat`），浏览器会自动打开播放器。
+3. 点击“音乐库”，填写音乐文件夹的完整路径，每行一个，例如 `D:\音乐`、`C:\Users\你的用户名\Music` 或 `\\NAS\music`；也可以直接粘贴资源管理器“复制为路径”得到的带引号路径。
+
+首次运行时 SmartScreen 可能提示“未识别的应用”，因为 exe 没有代码签名证书：点“更多信息 → 仍要运行”即可。使用说明、数据位置、退出方式和常见问题见压缩包内的 `使用说明-Windows.txt` 与 [docs/WINDOWS.md](docs/WINDOWS.md)。
+
+从源码运行（已安装 Node.js 22.12 或更新的 LTS 版本）：解压源码后双击 `启动音乐播放器.bat`，或在 PowerShell／命令提示符中执行 `npm ci`、`npm run build`、`npm run music -- --port 5175`。需要自行打包时执行 `npm run package:windows`。
+
+## 在线专辑架（Windows 版新增）
+
+顶部「在线」按钮打开在线曲库：搜索 Internet Archive 的公开音频，加入后放进**独立的在线专辑架和独立列表**，不会混入本地音乐库；也可以连接自己搭建的 Subsonic 兼容服务（Navidrome、Jellyfin 等）。只在你搜索、加入或播放时联网，音频和封面由本机服务转发，不下载、不缓存。授权随条目显示，未标注授权的条目会明确提示。详见 [docs/ONLINE-LIBRARY.md](docs/ONLINE-LIBRARY.md)。
+
 ## 可以做什么
 
 | 功能 | 使用方式与效果 |
@@ -143,6 +159,7 @@ MUSIC_DATA_DIR="../music-data" bash "启动音乐播放器.command"
 
 - [DESIGN.md](DESIGN.md)：现行视觉与交互设计、细节参数和演进依据。
 - [CHANGELOG.md](CHANGELOG.md)：从上游和早期音乐原型到 V0.3.0 的有效改动。
+- [Windows 适配说明](docs/WINDOWS.md)：Windows 包、路径规则、构建方式、已执行的检查与未覆盖范围。
 - [音乐服务说明](docs/MUSIC-SERVICE.md)：数据目录、索引规则、API、音频与在线资料。
 - [V0.3.0 界面回归记录](docs/UI-REVIEW-V0.3.0.md)：本轮自动化检查、隔离示例库的浏览器视觉回归及未覆盖范围。
 - [V0.3.0 发布检查](docs/RELEASE-V0.3.0.md)：2026-10-01 发布整理、源码包及实际检查范围。
