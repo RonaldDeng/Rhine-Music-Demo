@@ -10,6 +10,7 @@ import "./music-transport-title.css";
 import "./music-theme.css";
 import "./music-theme-switch.css";
 import "./music-overview.css";
+import { version as appVersion } from "../package.json";
 import { MusicOverviewUI } from "./music-overview-ui";
 import { normalizeMusicArrayMode, type MusicArrayMode } from "./music-array-layout";
 import { DocumentDecryption } from "./document-decryption";
@@ -284,7 +285,7 @@ stage.innerHTML = `
     <article id="album-detail-content" tabindex="-1"></article>
   </section>
   <div id="music-empty" class="music-empty" hidden><small>YOUR PRIVATE COLLECTION</small><h1>让音乐进入这座档案馆。</h1><p>选择本地音乐文件夹，专辑封面会出现在每一张卡片上。</p><button data-action="library">设置音乐文件夹 ↗</button><button data-action="demo" class="subtle">先查看演示封面</button></div>
-  <div class="music-bottomline"><span>LOCAL COLLECTION <i>·</i> <span id="library-count">0 ALBUMS</span></span><span id="runtime-info">THREE.JS / LOCAL</span></div>
+  <div class="music-bottomline"><span>LOCAL COLLECTION <i>·</i> <span id="library-count">0 ALBUMS</span></span><span id="runtime-info">THREE.JS / LOCAL / V${appVersion}</span></div>
   <div id="music-panel-root"></div><div id="music-toast" role="status" aria-live="polite"></div>
   <div id="music-loading"><span class="loading-orbit"></span><strong>OPENING THE ARCHIVE</strong><small>正在载入三维专辑架</small></div>
 `;
@@ -525,7 +526,7 @@ function savePrefs() {
 async function copyPerformanceReport() {
   const host = $("#three-scene");
   const report = {
-    version: "0.4.1-startup", browser: navigator.userAgent,
+    version: `${appVersion}-startup`, browser: navigator.userAgent,
     viewport: { width: innerWidth, height: innerHeight, devicePixelRatio },
     hidden: document.hidden, phase: stage.dataset.musicBoot,
     quality: JSON.parse(host.dataset.renderQuality || "null"),
@@ -2225,7 +2226,7 @@ function frame(ms: number) {
     frameCount++;
     if (ms - lastFrame > 1500) {
       $("#runtime-info").textContent =
-        `${Math.round((frameCount * 1000) / (ms - lastFrame))} FPS / ${themeNames[preferences.theme]}`;
+        `${Math.round((frameCount * 1000) / (ms - lastFrame))} FPS / ${themeNames[preferences.theme]} / V${appVersion}`;
       // Keep read-only render diagnostics alongside the existing resolution
       // attributes, without adding controls or per-frame DOM work.
       if (!viewer?.isOpen) {

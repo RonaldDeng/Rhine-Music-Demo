@@ -7,6 +7,7 @@ import ts from 'typescript';
 import { MusicFrameTiming } from '../src/music-frame-timing.ts';
 import './check-music-frame-timing.mjs';
 
+const { version: appVersion } = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'));
 const source = await readFile(new URL('../src/music-app.ts', import.meta.url), 'utf8');
 const tree = ts.createSourceFile('music-app.ts', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
 const functionNames = ['frame', 'resetFrameTiming', 'suspendPage', 'resumePage', 'disposePage'];
@@ -61,7 +62,7 @@ function fixture({ renderScene = true, firstMs = 0, reduced = false, speed = 1, 
   const requestAnimationFrame = callback => { const id = ++handle; pending.set(id, callback); return id; };
   const cancelAnimationFrame = id => pending.delete(id);
   const compiled = new Function('document', 'window', 'scene', 'boot', 'viewer', 'presentation', '$',
-    'requestAnimationFrame', 'cancelAnimationFrame', 'MusicFrameTiming', 'config', 'calls', `
+    'requestAnimationFrame', 'cancelAnimationFrame', 'MusicFrameTiming', 'config', 'calls', 'appVersion', `
     const performance = { now: () => config.cpuNow() };
     const preferences = { reduced: config.reduced, theme: 'day' }, themeNames = { day: '暖昼' };
     const stage = { dataset: {} }, getMusicMotionSpeed = () => config.speed;
@@ -80,7 +81,7 @@ function fixture({ renderScene = true, firstMs = 0, reduced = false, speed = 1, 
       state: () => ({ lastFrame, frameCount, frameHandle, frameDisposed, frameSuspended,
         textMotionTime, textMotionLastFrame, timing: frameTiming.snapshot() }) };
   `)(document, window, scene, boot, viewer, presentation, $, requestAnimationFrame, cancelAnimationFrame,
-    MusicFrameTiming, { reduced, speed, ready, cpuNow: () => { cpuClock += 2; return cpuClock; } }, calls);
+    MusicFrameTiming, { reduced, speed, ready, cpuNow: () => { cpuClock += 2; return cpuClock; } }, calls, appVersion);
   const result = { ...compiled, calls, pending, elements, document, window, boot, viewer, presentation,
     next(ms) {
       assert.equal(pending.size, 1, 'Exactly one main frame continuation, without accumulation');
@@ -102,7 +103,8 @@ assert.equal(steady.pending.size, 1);
 assert.equal(steady.state().timing.samples, 240);
 assert.equal(steady.state().timing.fps, 60);
 assert.equal(steady.state().timing.cpuP95, 2);
-assert.match(steady.elements.get('#runtime-info').textContent, /^6[01] FPS \/ 暖昼$/);
+assert.match(steady.elements.get('#runtime-info').textContent, /^6[01] FPS \/ 暖昼 \/ V/);
+assert.ok(steady.elements.get('#runtime-info').textContent.endsWith(` / V${appVersion}`));
 assert.equal(JSON.parse(steady.elements.get('#three-scene').dataset.frameTiming).fps, 60);
 
 const opaque = fixture({ renderScene: false });
