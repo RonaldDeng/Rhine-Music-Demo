@@ -76,7 +76,9 @@ QQ 来源属于未承诺稳定性的公开可访问接口。2026-10-01 公开样
 
 ## 可选 MusicBrainz
 
-在线查询只上传专辑文字信息/已有 MBID，不上传音频。默认关闭自动补全。开启前需在界面通过 `POST /api/config {"musicBrainzContact":"自己的邮箱或项目网址"}` 设置自己的维护者联系信息，也可使用环境变量：
+入口位于“设置 → 高级设置 · MusicBrainz”，默认收起。展开后可手动补全、设置联系信息，以及开启或关闭扫描后的自动补全；音乐库面板保留本地分类规则入口。界面整理不改变已有自动补全偏好、缓存或资料来源。
+
+在线查询只上传专辑文字信息/已有 MBID，不上传音频。默认关闭自动补全。开启前需在上述高级设置中填写自己的维护者联系邮箱或项目网址（通过 `POST /api/config {"musicBrainzContact":"自己的邮箱或项目网址"}` 保存），也可使用环境变量：
 
 ```sh
 MUSICBRAINZ_CONTACT='your-project-contact' node scripts/music-server.mjs

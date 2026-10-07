@@ -40,6 +40,11 @@ body {
   margin: 0;
   overflow: hidden;
 }
+img,
+canvas {
+  -webkit-touch-callout: none;
+  -webkit-user-drag: none;
+}
 button,
 input {
   font: inherit;
