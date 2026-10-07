@@ -1,3 +1,5 @@
+import { followMusicMotionSpeed } from "./music-motion-ui";
+
 const enterEase = "cubic-bezier(0.22, 1, 0.36, 1)";
 const exitEase = "cubic-bezier(0.4, 0, 1, 1)";
 
@@ -39,12 +41,13 @@ export class SurfaceTransition {
   private run(show: boolean, reduced: boolean, finished?: () => void) {
     const revision = ++this.revision;
     const hidden = this.root.hidden;
+    const interrupted = this.animations.length > 0;
     const opacities = this.fadeTargets.map((target) =>
       hidden ? "0" : getComputedStyle(target).opacity,
     );
     const transform = this.panel
       ? hidden
-        ? this.direction === "right" ? "translateX(36px)" : "translateY(12px)"
+        ? this.direction === "right" ? "translateX(24px)" : "translateY(10px)"
         : getComputedStyle(this.panel).transform
       : undefined;
     this.animations.forEach((animation) => animation.cancel());
@@ -63,27 +66,32 @@ export class SurfaceTransition {
       complete();
       return;
     }
+    // A late reversal travels a short distance. Replaying a full entrance here
+    // makes rapid open/back input feel sticky even when its first pixel matches.
+    const distance = Math.max(...opacities.map((opacity) =>
+      Math.abs((show ? 1 : 0) - Number(opacity))), 0);
+    const baseDuration = show ? this.enterDuration : this.exitDuration;
     const options: KeyframeAnimationOptions = {
-      duration: show ? this.enterDuration : this.exitDuration,
+      duration: interrupted ? Math.max(72, baseDuration * Math.sqrt(distance)) : baseDuration,
       easing: show ? this.enterEasing : exitEase,
       fill: "both",
     };
-    const fades = this.fadeTargets.map((target, index) => target.animate(
+    const fades = this.fadeTargets.map((target, index) => followMusicMotionSpeed(target.animate(
       [{ opacity: opacities[index] }, { opacity: show ? 1 : 0 }],
       options,
-    ));
+    )));
     this.animations.push(...fades);
     if (this.panel) {
       this.animations.push(
-        this.panel.animate(
+        followMusicMotionSpeed(this.panel.animate(
           [
             { transform },
             { transform: this.direction === "right"
-              ? show ? "translateX(0)" : "translateX(52px)"
-              : show ? "translateY(0)" : "translateY(8px)" },
+              ? show ? "translateX(0)" : "translateX(32px)"
+              : show ? "translateY(0)" : "translateY(6px)" },
           ],
           options,
-        ),
+        )),
       );
     }
     void Promise.all(fades.map((fade) => fade.finished)).then(complete).catch(() => {});
@@ -100,10 +108,10 @@ export class ContentTransition {
         : "0.35";
     this.cancel();
     if (!reduced)
-      this.animation = element.animate([{ opacity }, { opacity: 1 }], {
+      this.animation = followMusicMotionSpeed(element.animate([{ opacity }, { opacity: 1 }], {
         duration: 150,
         easing: enterEase,
-      });
+      }));
   }
 
   cancel() {

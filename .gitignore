@@ -40,3 +40,15 @@ art/archive-studio.png
 
 # Local comparison audio from the original reference video (not a runtime asset)
 reference/typing-original.wav
+
+# Private promotional film material and its project-specific production sources
+/promo/
+/promo.html
+/film-review.html
+/src/promo-*
+/scripts/*promo*
+/docs/PROMO-*.md
+
+# Local video research frames: not runtime assets or public distribution material
+/public/lighting-reference/
+/reference/motion/

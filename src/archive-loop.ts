@@ -2,7 +2,9 @@ import { archiveColumns, columnFiles, fileLocation } from "./data.ts";
 
 export type ArchiveCell = { lane: number; row: number };
 export type ArchiveNavigation =
-  { axis: "row" | "lane"; direction: number } | { cell: ArchiveCell };
+  { axis: "row" | "lane"; direction: number;
+    /** Explicit physical depth for column browsing with position memory disabled. */
+    row?: number } | { cell: ArchiveCell; guided?: boolean };
 
 export const LOOP_COLUMNS = 9;
 export const LOOP_ROWS = 32;
@@ -52,7 +54,8 @@ export function selectionCell(
       navigation?.axis === "lane"
         ? current.lane + navigation.direction
         : nearestOccurrence(next.lane, current.lane, archiveColumns.length),
-    row,
+    row: navigation?.axis === "lane" && Number.isFinite(navigation.row)
+      ? Math.round(navigation.row!) : row,
   };
 }
 

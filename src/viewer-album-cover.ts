@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { COVER_SIZE, COVER_INSET, containCover } from "./cover-atlas";
+import { COVER_SIZE, COVER_PAINT_SIZE, paintCover } from "./cover-atlas";
 import type { MusicAlbum } from "./music-types";
 import { createAlbumPrintMaterial } from "./music-model.ts";
 
@@ -16,9 +16,9 @@ export class ViewerAlbumCover {
     readonly album: MusicAlbum,
     anisotropy = 1,
   ) {
-    this.canvas.width = 1024;
-    this.canvas.height = 1024;
-    this.paintPlaceholder();
+    this.canvas.width = COVER_PAINT_SIZE;
+    this.canvas.height = COVER_PAINT_SIZE;
+    paintCover(this.canvas, album);
     this.texture = new THREE.CanvasTexture(this.canvas);
     this.texture.colorSpace = THREE.SRGBColorSpace;
     this.texture.anisotropy = Math.min(8, anisotropy);
@@ -40,40 +40,6 @@ export class ViewerAlbumCover {
     this.ready = this.load();
   }
 
-  private paintPlaceholder() {
-    const context = this.canvas.getContext("2d")!;
-    const { width, height } = this.canvas;
-    const margin = width * COVER_INSET,
-      size = height - margin * 2,
-      left = (width - size) / 2;
-    context.clearRect(0, 0, width, height);
-    context.fillStyle = "#c9c9c4";
-    context.fillRect(left, margin, size, size);
-    context.strokeStyle = "#f8f7f1";
-    context.lineWidth = height / 180;
-    for (const radius of [0.2, 0.04]) {
-      context.beginPath();
-      context.arc(width / 2, height * 0.43, height * radius, 0, Math.PI * 2);
-      context.stroke();
-    }
-    context.fillStyle = "#3f4849";
-    context.textAlign = "center";
-    context.font = "500 34px sans-serif";
-    context.fillText(
-      this.album.title || "暂无专辑封面",
-      width / 2,
-      height * 0.8,
-      height * 0.83,
-    );
-    context.font = "19px sans-serif";
-    context.fillText(
-      "LOCAL COLLECTION / NO COVER",
-      width / 2,
-      height * 0.87,
-      height * 0.83,
-    );
-  }
-
   private async load() {
     if (!this.album.coverUrl) return;
     const image = new Image();
@@ -83,17 +49,9 @@ export class ViewerAlbumCover {
     try {
       await image.decode();
       if (this.disposed || this.mesh.userData.coverDisposed) return;
-      const context = this.canvas.getContext("2d")!;
-      const { width, height } = this.canvas;
-      const margin = width * COVER_INSET;
-      const box = containCover(
-        image.naturalWidth,
-        image.naturalHeight,
-        width - margin * 2,
-        height - margin * 2,
-      );
-      context.clearRect(0, 0, width, height);
-      context.drawImage(image, box.x + margin, box.y + margin, box.width, box.height);
+      paintCover(this.canvas, this.album, {
+        source: image, width: image.naturalWidth, height: image.naturalHeight,
+      });
       this.mesh.userData.coverStatus = "loaded";
       this.mesh.userData.coverImageSize = [
         image.naturalWidth,

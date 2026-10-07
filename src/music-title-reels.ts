@@ -1,3 +1,5 @@
+import { followMusicMotionSpeed } from "./music-motion-ui";
+
 export type TitleGlyph = {
   key: string;
   text: string;
@@ -82,10 +84,10 @@ class TitleTrack {
     const frames = Array.from({ length: STEPS + 1 }, (_, index) => ({
       [this.property]: this.format(this.at(index / STEPS).value),
     }));
-    const animation = this.element.animate(frames, {
+    const animation = followMusicMotionSpeed(this.element.animate(frames, {
       duration: DURATION,
       easing: "linear",
-    });
+    }));
     this.animation = animation;
     // Give all glyphs a common timeline origin, including a newly added line.
     const now = this.element.ownerDocument.timeline.currentTime;
@@ -99,6 +101,9 @@ class TitleTrack {
 
   finish() {
     this.set(this.target);
+  }
+  get finished() {
+    return this.animation?.finished ?? Promise.resolve();
   }
   cancel() {
     if (this.animation) {
@@ -146,7 +151,8 @@ export function createTitleReels(visual: HTMLElement, spacer: HTMLElement) {
     ([value]) => `${value || 0}px`,
   );
   let heightTarget = 0;
-  let cleanup: ReturnType<typeof setTimeout> | undefined;
+  let settling = false;
+  let revision = 0;
 
   const writeFaces = (slot: Slot, values: Face[]) => {
     // Usually the visible pair plus one target. A simultaneous font-size change
@@ -282,7 +288,7 @@ export function createTitleReels(visual: HTMLElement, spacer: HTMLElement) {
   };
 
   const settle = () => {
-    cleanup = undefined;
+    settling = false;
     const idle: string[] = [];
     slots.forEach((slot, key) => {
       slot.roll.finish();
@@ -305,18 +311,18 @@ export function createTitleReels(visual: HTMLElement, spacer: HTMLElement) {
   };
   const onReduced = () => {
     if (!reduced.matches) return;
-    clearTimeout(cleanup);
+    revision++;
     settle();
   };
   reduced.addEventListener("change", onReduced);
 
   return {
     get moving() {
-      return cleanup !== undefined;
+      return settling;
     },
     render(glyphs: TitleGlyph[], nextHeight: number, animated: boolean) {
       animated = animated && !reduced.matches && !document.hidden;
-      clearTimeout(cleanup);
+      const currentRevision = ++revision;
       const active = new Set(glyphs.map((glyph) => glyph.key));
       glyphs.forEach((glyph) => {
         const slot = slots.get(glyph.key) || create(glyph);
@@ -354,15 +360,25 @@ export function createTitleReels(visual: HTMLElement, spacer: HTMLElement) {
         if (animated) height.move([nextHeight]);
         else height.set([nextHeight]);
       }
-      if (animated) cleanup = setTimeout(settle, DURATION + 40);
-      else settle();
+      if (animated) {
+        settling = true;
+        const motions = [height.finished];
+        slots.forEach((slot) => motions.push(
+          slot.roll.finished, slot.position.finished, slot.viewport.finished,
+        ));
+        // A duration-based timer could truncate a reel after slowing it down.
+        // Completion follows the actual animation timelines, including retiming.
+        void Promise.all(motions).then(() => {
+          if (currentRevision === revision) settle();
+        }).catch(() => {});
+      } else settle();
     },
     finish() {
-      clearTimeout(cleanup);
+      revision++;
       settle();
     },
     destroy() {
-      clearTimeout(cleanup);
+      revision++;
       reduced.removeEventListener("change", onReduced);
       height.cancel();
       slots.forEach((slot) => {

@@ -1,6 +1,6 @@
 {
   "name": "rhine-music-demo",
-  "version": "0.3.0",
+  "version": "0.4.1",
   "license": "MIT",
   "private": true,
   "type": "module",
@@ -16,9 +16,18 @@
     "format": "prettier --write src scripts index.html package.json tsconfig.json",
     "preview": "vite preview --host 127.0.0.1",
     "music": "node scripts/music-server.mjs",
-    "package:windows": "node scripts/package-windows.mjs",
-    "check:platform": "node --test scripts/check-platform.mjs scripts/check-music-launcher.mjs",
-    "check:music": "node --test scripts/check-platform.mjs scripts/check-music-launcher.mjs scripts/check-music-library.mjs scripts/check-album-introductions.mjs scripts/check-online-sources.mjs && node scripts/check-music-scene.mjs && node --experimental-strip-types --test scripts/check-music-player.mjs && node scripts/check-music-motion.mjs && node scripts/check-music-camera.mjs && node scripts/check-music-lighting.mjs && node scripts/check-music-presentation.mjs && node scripts/check-music-model.mjs"
+    "check:music": "node --test scripts/check-music-library.mjs scripts/check-album-introductions.mjs && node scripts/check-music-scene.mjs && node --experimental-strip-types --test scripts/check-music-player.mjs && node scripts/check-music-motion.mjs && node scripts/check-music-camera.mjs && node scripts/check-music-lighting.mjs && node scripts/check-music-presentation.mjs && node scripts/check-music-model.mjs",
+    "check:credits": "node --test scripts/check-local-music-credits.mjs scripts/check-qq-credits.mjs scripts/check-music-credits.mjs",
+    "lab": "vite --host 127.0.0.1 --port 5311 --strictPort",
+    "check:lighting": "node scripts/check-music-lighting.mjs && node scripts/check-music-row-lighting.mjs && node scripts/check-music-row-motion.mjs && node scripts/check-music-boot-timing.mjs",
+    "check:interaction": "node scripts/check-music-motion-speed.mjs && node scripts/check-music-ui-motion.mjs && node scripts/check-music-wheel-navigation.mjs && node scripts/check-music-presentation.mjs && node scripts/check-music-archive-motion.mjs && node scripts/check-music-column-position.mjs && node scripts/check-music-real-columns.mjs && node scripts/check-music-real-column-runtime.mjs",
+    "check:audio": "node --test scripts/check-music-audio.mjs scripts/check-dsd-fixtures.mjs scripts/check-music-gapless.mjs && node --experimental-strip-types --test scripts/check-music-player.mjs scripts/check-music-browser-gapless.mjs && node scripts/check-music-song-transition-ui.mjs",
+    "check:audio:browser-render": "node scripts/check-music-gapless-offline.mjs",
+    "check:overview": "node scripts/check-music-overview.mjs && node scripts/check-music-overview-ui.mjs",
+    "check:cover": "node scripts/check-music-cover.mjs",
+    "check:v040": "npm run check:v041",
+    "check:startup": "node scripts/check-music-startup.mjs && node scripts/check-music-renderer-startup.mjs && node scripts/check-quality.mjs",
+    "check:v041": "npm run check:music && npm run check:audio && npm run check:overview && npm run check:cover && npm run check:startup && npm run check:lighting && npm run check:interaction && npm run check:viewport && npm run check:content && npm run check:credits && node scripts/check-music-launcher.mjs"
   },
   "dependencies": {
     "@kitlangton/rolling-number": "0.4.1",

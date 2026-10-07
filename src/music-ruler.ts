@@ -1,4 +1,5 @@
 import { nearestOccurrence, wrap, type ArchiveNavigation } from "./archive-loop";
+import { getMusicMotionSpeed, onMusicMotionSpeedChange } from "./music-motion-settings";
 
 type MusicRulerItem = { index: number; title: string; id?: string };
 type Spring = { value: number; velocity: number };
@@ -53,9 +54,23 @@ export function setupMusicRuler(host: HTMLElement) {
   let selectedOrdinal = 0;
   let populated = false;
   let reduced = false;
+  let looping = true;
   let disposed = false;
   let frame = 0;
   let lastFrame = 0;
+  let motionTime = 0;
+  let clockTime = performance.now();
+  let motionSpeed = getMusicMotionSpeed();
+  const motionNow = (now: number) => {
+    motionTime += Math.max(0, now - clockTime) * motionSpeed;
+    clockTime = Math.max(clockTime, now);
+    return motionTime;
+  };
+  const unsubscribeSpeed = onMusicMotionSpeedChange((speed) => {
+    // Keep ripple delays and spring progress on the same continuous clock.
+    motionNow(performance.now());
+    motionSpeed = speed;
+  });
   let tickWidth = 3;
   let gap = 8;
   let restHeight = 10;
@@ -106,8 +121,11 @@ export function setupMusicRuler(host: HTMLElement) {
   const visibleCount = () => Math.min(CAPACITY, items.length);
   const targetWidth = () => Math.max(0, visibleCount() * step - gap);
   const validOrdinal = (ordinal: number) => items.length > 0 &&
-    (overflowing() || (ordinal >= 0 && ordinal < items.length));
+    ((looping && overflowing()) || (ordinal >= 0 && ordinal < items.length));
   const itemAt = (ordinal: number) => validOrdinal(ordinal) ? items[wrap(ordinal, items.length)] : undefined;
+  const selectionScroll = () => !overflowing() ? 0 : looping
+    ? selectedOrdinal - ANCHOR
+    : Math.max(0, Math.min(items.length - CAPACITY, selectedOrdinal - ANCHOR));
 
   function measure() {
     const css = getComputedStyle(host);
@@ -240,19 +258,20 @@ export function setupMusicRuler(host: HTMLElement) {
   function animate(now: number) {
     frame = 0;
     if (disposed) return;
-    const seconds = Math.min(0.05, Math.max(0, (now - lastFrame) / 1000));
+    now = motionNow(now);
+    const seconds = Math.min(0.05 * motionSpeed, Math.max(0, (now - lastFrame) / 1000));
     lastFrame = now;
     if (render(now, seconds) && !frame) frame = requestAnimationFrame(animate);
   }
 
   function schedule() {
     if (disposed || frame) return;
-    lastFrame = performance.now();
+    lastFrame = motionNow(performance.now());
     frame = requestAnimationFrame(animate);
   }
 
   function regroup(now: number, instant: boolean) {
-    scrollTarget = overflowing() ? selectedOrdinal - ANCHOR : 0;
+    scrollTarget = selectionScroll();
     scroll.value = scrollTarget;
     scroll.velocity = 0;
     const start = overflowing() ? Math.floor(scroll.value) - OVERSCAN : 0;
@@ -295,7 +314,7 @@ export function setupMusicRuler(host: HTMLElement) {
 
   const onResize = () => { measure(); schedule(); };
   const onReduced = () => {
-    render(performance.now(), 0, instantMotion());
+    render(motionNow(performance.now()), 0, instantMotion());
     schedule();
   };
   // The host width is animated by this controller, so observing it would cause
@@ -305,25 +324,26 @@ export function setupMusicRuler(host: HTMLElement) {
   measure();
 
   return {
-    update(nextItems: MusicRulerItem[], selected: number, reduceMotion: boolean, navigation?: ArchiveNavigation) {
+    update(nextItems: MusicRulerItem[], selected: number, reduceMotion: boolean, navigation?: ArchiveNavigation, loop = true) {
       if (disposed) return;
       reduced = reduceMotion;
-      const now = performance.now();
+      const now = motionNow(performance.now());
       const nextKey = JSON.stringify(nextItems.map((item) => [item.id ?? item.index, item.index]));
-      const changedGroup = nextKey !== groupKey;
+      const changedGroup = nextKey !== groupKey || loop !== looping;
       const changedSelection = selected !== selectedIndex;
       const first = !populated;
       const row = Math.max(0, nextItems.findIndex((item) => item.index === selected));
       const rowDirection = navigation && "axis" in navigation && navigation.axis === "row"
         ? navigation.direction : 0;
       items = nextItems;
+      looping = loop;
       groupKey = nextKey;
       selectedIndex = selected;
       if (changedGroup || first) {
         selectedOrdinal = row;
         regroup(now, first || instantMotion());
       } else if (changedSelection || rowDirection) {
-        if (overflowing()) {
+        if (looping && overflowing()) {
           if (rowDirection) {
             const candidate = selectedOrdinal + rowDirection;
             if (wrap(candidate, items.length) === row) selectedOrdinal = candidate;
@@ -334,8 +354,8 @@ export function setupMusicRuler(host: HTMLElement) {
               selectedOrdinal += delta;
             }
           } else selectedOrdinal = nearestOccurrence(row, scroll.value + ANCHOR, items.length);
-          scrollTarget = selectedOrdinal - ANCHOR;
         } else selectedOrdinal = row;
+        scrollTarget = selectionScroll();
       }
       // Metadata refreshes and repeated selection updates do not restart motion.
       slots.forEach(labelSlot);
@@ -345,6 +365,7 @@ export function setupMusicRuler(host: HTMLElement) {
     },
     destroy() {
       disposed = true;
+      unsubscribeSpeed();
       cancelAnimationFrame(frame);
       events.abort();
       reducedQuery.removeEventListener("change", onReduced);

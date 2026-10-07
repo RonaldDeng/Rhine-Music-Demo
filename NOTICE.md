@@ -37,6 +37,14 @@
 
 这些文本保留依赖包原文。完整版本树见 `package-lock.json`；其他构建工具和间接依赖按安装包各自的 LICENSE / NOTICE 使用，不被本项目重新授权。
 
+## V0.4.0 本机音频依赖
+
+V0.4.0 音频解码通过独立子进程调用用户本机安装的 FFmpeg / ffprobe。FFmpeg 项目的主要许可为 LGPL-2.1-or-later；启用可选 GPL 组件的构建适用其相应 GPL 条款。本次开发机的 FFmpeg 8.0.1 构建启用了 `--enable-gpl --enable-version3`，不将这个构建描述为纯 LGPL。项目没有捆绑、上传或重新授权 FFmpeg 二进制；以后若打包分发，需按实际分发构建保留对应版权、许可证及源代码材料。来源：[FFmpeg 官方](https://ffmpeg.org/)、[官方许可说明](https://ffmpeg.org/legal.html)。
+
+原生输出使用 macOS 自带 AVFoundation / AVFAudio、CoreAudio 与 AudioToolbox 框架，由 Apple 提供；这些系统框架不属于本项目 MIT 代码。`native/RhineAudio.swift` 是本项目新增桥接源码，随项目代码许可；在本机生成的 helper 二进制放在用户数据缓存，不随源码分发。
+
+APE 回归仅在本机临时目录使用 [FFmpeg 官方音频样本](https://samples.ffmpeg.org/A-codecs/lossless/)中的 `luckynight.ape`；它是官方说明所述的一分钟 CD 节选测试样本，来源标注不代表授予音乐再分发许可。文件没有复制进项目，也不进入任何源码包。其他新增音频测试使用现场生成的短正弦波，不使用用户私人曲库。路线与验证详见 [AUDIO-V0.4.0.md](docs/AUDIO-V0.4.0.md)。
+
 ## 在线资料
 
 Wikipedia 摘要、Wikidata 与 MusicBrainz 数据按其来源许可处理。客户端保存介绍时同时保存来源链接、取得时间和许可说明；此类用户自行查询的缓存不纳入项目 MIT 授权，也不进入发布包。MusicBrainz 将核心数据和补充数据分别授权，详见[官方数据许可](https://musicbrainz.org/doc/About/Data_License)；不能仅因为程序开源就统一将数据改授 MIT。

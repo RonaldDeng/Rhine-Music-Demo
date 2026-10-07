@@ -2,7 +2,8 @@
 
 此目录保留 Blender 场景和对应建模脚本，用于维护与复现。正常运行播放器不需要安装 Blender；运行时资源位于 `public/assets/`。
 
-- `music-cd.blend` / `build_music_cd.py`：音乐模式玻璃 CD 盒；V0.3.0 的显示尺寸由前端运行时调整。
+- `build-music-case.mjs` / `music-case-v040.json`：V0.4.0 新专辑盒的可复现 Three.js 几何源与结构清单。运行 `node art/build-music-case.mjs` 生成 `public/assets/music-case-v040.glb` 并同步带内容哈希的资源入口。本机没有可调用的 Blender 或 Blender MCP，因此本版使用原生几何脚本；没有把旧 `.blend` 冒充新模型源文件。
+- `music-cd.blend` / `build_music_cd.py`：保留的 V0.3.0 音乐模式玻璃 CD 盒历史源；V0.3.0 的显示尺寸由前端运行时调整。它不是 V0.4.0 的运行时模型，历史脚本会重写旧资源入口，勿用于重建 V0.4.0。
 - `rhine-archive.blend` / `build_archive.py`：保留的原版档案盒。
 - `archive-assembly.blend` / `build_assembly.py`：原版拆解模型。
 - 其余 `.py` 是共享结构、外壳和审阅场景脚本；生成的 `.blend1` 备份、`.cache/` 和审阅 PNG 不随发布分发。

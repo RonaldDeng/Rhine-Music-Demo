@@ -1,4 +1,4 @@
-# 本地音乐服务 · V0.3.0（macOS）
+# 本地音乐服务 · V0.4.0（macOS）
 
 `node scripts/music-server.mjs` 同时提供 `dist/` 界面和本地音乐 API。默认仅监听 `127.0.0.1:5173`；端口可通过 `--port 5174` 或 `PORT` 指定。修改前端后重新构建并刷新。服务保持运行期间可编辑本地流派规则，下一次读取曲库就会生效。
 
@@ -16,6 +16,9 @@ node scripts/music-server.mjs
 - `library-index.json`：自动扫描缓存。记录真实文件的引用、尺寸/修改时间、元数据、封面与在线来源，不复制歌曲。
 - `genre-rules.json`：展示分类、别名和 `albumOverrides` 人工覆盖。扫描不修改这个文件。通过 API 更新时保留一份 `.backup`。
 - `artwork/`：从歌曲内嵌图片提取的原始封面缓存，不裁切或拉伸。文件夹封面直接读取原文件。
+- `qq-credits-cache.json`：QQ 搜索、曲目参与名单及来源冷却记录；不随源码分发。
+- `audio-cache-v040/`：FFmpeg 生成的 PCM 播放缓存与技术信息；DSF / DFF 只转换到此处，不改写源文件。
+- `native-v040/`：本机编译的 CoreAudio helper，不随源码分发。
 
 每个配置根目录下直属的音频文件各为一个单曲专辑，以歌曲 title（缺失时文件名）展示，ID 由该音频路径决定。子文件夹仍每个含音频的文件夹为一个专辑；扫描递归进入子文件夹，跳过符号链接和隐藏子目录。多张 CD 若在同一文件夹中，优先按 disc 标签、再按 `1-01` 这样的文件名前缀排序。不同子文件夹暂分别视为专辑。移动单曲文件或专辑文件夹会建立新 ID；当前版本尚未自动识别迁移。重扫时按专辑 ID 匹配缓存，旧根目录合辑由新单曲条目替换，不将旧合辑的介绍或分类自动分发。
 
@@ -32,11 +35,16 @@ API 只能通过已索引的 ID 读取歌曲和封面，不能传入任意文件
 | `GET /api/library` | 当前真实库、归并后的流派、根目录和扫描/补全状态；不虚构演示音乐 |
 | `POST /api/library/scan` | `{ "roots": ["/absolute/path"] }` 可选；保存目录并扫描，返回 202，轮询 GET 读取完成结果；并发请求合并 |
 | `GET /api/audio/:trackId` | 原始音频，支持单一 HTTP Range 与 HEAD，用于跳转播放 |
+| `GET /api/audio/capabilities` | 本机 FFmpeg / ffprobe、CoreAudio 能力、输出设备及失败原因 |
+| `POST /api/audio/prepare/:trackId` | 准备本地 PCM 缓存，返回播放 URL 与技术字段；不返回本机路径 |
+| `GET /api/decoded-audio/:trackId` | PCM 播放缓存，支持单段 Range 与 HEAD |
+| `GET /api/output/state`、`POST /api/output/command` | CoreAudio 状态，以及按索引 track ID 执行的白名单播放控制 |
 | `GET /api/artwork/:albumId` | 原比例封面图片；URL `v` 参数随封面变化更新 |
 | `GET/POST /api/genre-rules` | 获取或保存完整 `{version:1,genres:[{id,name,aliases:[]}],albumOverrides:{}}` |
 | `GET/POST /api/config` | 配置 `roots`、`onlineEnabled`、`musicBrainzContact`、`foobarBaseUrl`；响应还给出 `musicBrainzConfigured` |
 | `POST /api/library/enrich` | 明确请求 MusicBrainz 补全；可选 `{ "albumIds": ["album-..."] }`；返回 202 |
 | `POST /api/library/introductions` | 独立查询/更新百科专辑介绍，无需 MusicBrainz 配置；`{ "albumIds": ["album-..."], "force": true }` 均可省略；返回 202 |
+| `POST /api/library/credits` | 手动查询 QQ 音乐制作人员；可选 `{ "albumIds": ["album-..."], "force": false }`；返回 202，进度见 `library.credits`。不传专辑 ID 时查询配置曲库中缺失或过期的制作资料，无需账号或 MusicBrainz 配置 |
 | `GET /api/foobar/status` | 是否保存过本机桥接地址；不是实际连接成功证明 |
 | `GET/POST /api/foobar/*` | 原样代理到本机 Beefweb `/api/*`，例如 `GET /api/foobar/player` |
 
@@ -46,11 +54,25 @@ API 只能通过已索引的 ID 读取歌曲和封面，不能传入任意文件
 
 本地读取 FLAC、WAV、M4A、DSF、DFF 等元数据。M4A 是容器，界面应同时展示 codec，不能把所有 M4A 标为无损 ALAC。`lossless` 反映解析器辨认出的无损/有损编码。位深、采样率、码率按解析结果显示，缺失时显示未知；AAC 的位深是解码输出位深，不代表原始无损精度。`localNote` 单独保存本地 comment；它绝不映射到专辑介绍 `description`。
 
-DSF/DFF 在索引中明确 `browserPlayable: false`；浏览器不具备本版本的 DSD 解码/直出路径。其他标为可尝试播放的格式仍取决于实际浏览器支持，尤其 ALAC。代码中保留的 Beefweb 代理属于历史实验接口，不作为 V0.3.0 的受支持播放方式；当前版本未接入外部播放器或 DAC/DSD 输出。
+DSF / DFF 在索引中仍为 `browserPlayable: false`，表示浏览器不能直接播放原始 DSD；`localDecodable` 与 `decodedAudioUrl` 提供本机准备后的播放路径。普通解码将 DSD 转为 24 位 / 176.4 kHz PCM，保留声道数；CoreAudio 无缝预备的下一首另行归一为当前引擎采样率的 Float32 PCM，按真实 WAV 帧数接续。原始歌曲及标签只读，曲库的源格式仍显示 DSD。没有 Native DSD 或 DoP 输出；Beefweb 代理继续保留为历史实验接口。
+
+`POST /api/audio/prepare/:trackId` 对 DSD 返回 `conversion: "dsd-to-pcm"`、`sourceSampleRate`（DSD 一位采样时钟）、`sourceBitsPerSample: 1`；`sampleRate`、`bitsPerSample` 和 `duration` 描述实际 PCM 缓存。按真实 codec 决定转换，不依赖文件后缀。首次完整解码后开始播放，后续命中缓存；单个 PCM 文件上限 2 GiB，磁盘缓存回收目标 4 GiB；当前与下一首持有租约，受保护文件或并行解码可能使占用暂时超过目标。缺失 FFmpeg / ffprobe 时明确提示；其他格式可尝试浏览器自身的解码能力。详细输出边界见 [音频说明](AUDIO-V0.4.0.md)。
 
 氛围配乐与歌曲分别使用独立音量。`MusicPlayer` 构造参数 `bgmVolume` 默认为 `0.18`，`setBgmVolume(0…1)` 和 `setBgmEnabled` 控制配乐，`setVolume` 仅控制歌曲。播放歌曲前配乐约 220ms 淡出至静音；停止歌曲回到浏览时按配乐自身音量约 650ms 淡入。暂停歌曲保持安静，歌曲连续播放之间不插入配乐。BGM 文件 `/audio/atmosphere.ogg` 由本地服务以 `audio/ogg` 提供。
 
-V0.3.0 的 `songFadeEnabled` 默认 `true`，界面偏好中的已有选择仍优先。开启时切歌先以约 450ms 淡出正在播放的曲目，再切换音源并以约 450ms 淡入；不混播两首歌曲。关闭后恢复直接切歌。曲目操作代次负责使被新选择、暂停或停止打断的旧异步请求失效，歌曲淡变与 BGM 淡变分别管理。
+自 V0.3.0 起，`songFadeEnabled` 默认 `true`，界面偏好中的已有选择仍优先。开启时切歌先以约 450ms 淡出正在播放的曲目，再切换音源并以约 450ms 淡入；不混播两首歌曲。关闭后恢复直接切歌。曲目操作代次负责使被新选择、暂停或停止打断的旧异步请求失效，歌曲淡变与 BGM 淡变分别管理。
+
+## 本地制作信息与 QQ 音乐查询（V0.3.1）
+
+仅「02 专辑介绍」下方的制作人员区提供单张专辑查询，设置提供查询缺失资料的批量入口。数据通过本地 Node 服务请求 QQ 音乐的搜索与 `music.sociality.KolWorksTag / SongProducer` 接口；只发送必要的歌名、歌手及公开歌曲标识，音频、文件路径和本地备注不发送。按曲目真实标签匹配歌曲，不能把根目录单曲的显示专辑标题当作真实专辑名。无法确认歌名、艺人、版别或时长时不猜测人员。
+
+`producers` 沿用现有字段名，记录 `name/role/source/trackId/trackTitle/url`，语义扩展为制作、创作和演奏人员。QQ 信息的 `source` 为 `QQ Music`；本地标签为 `local`，既有 MusicBrainz 资料仍保留。界面只在「02 专辑介绍」显示名单，按姓名与来源合并，姓名、职责、来源左对齐。姓名 14px、职责 12px、来源 10.5px 灰色小字；单曲直接标注歌名，多曲展开查看每曲职责及来源链接，不提升为整张专辑职务。
+
+`creditsLookup` 保存每张专辑的查询时间、状态、匹配曲数和错误；`library.credits` 返回批量完成数量及当前曲目进度。失败和部分结果保留已有有效名单，扫描期间迟到结果必须重新核对曲目身份。成功数据保存在本机数据目录，普通批量查询优先复用缓存；单张「重新查询」可刷新，但不能跳过来源冷却。限流或连续失败会暂停队列，不阻止本地播放。
+
+本地元数据解析版本已提升，会在下一次扫描重读旧缓存，补取作曲、作词、编曲、指挥、制作、混音及明确的原生参与者标签。只读取标签已有事实，不从歌词或任意注释猜测人员。查询的第三方资料缓存不随源码分发。`npm run check:credits` 使用隔离 fixture 验证本地标签、匹配、缓存、限流及服务集成。
+
+QQ 来源属于未承诺稳定性的公开可访问接口。2026-10-01 公开样本《晴天》曾取得 10 项人员角色，浏览器端到端联调也出现过搜索业务码 `2001`；HTTP 200 不等于业务查询成功。默认请求串行、间隔至少 1.5 秒，普通成功缓存 30 天；HTTP 429 尊重 `Retry-After`，没有该头时冷却 15 分钟。错误不自动重试、不换出口；本地缓存不能消除首次联网查询的可用性限制。
 
 ## 可选 MusicBrainz
 

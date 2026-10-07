@@ -7,7 +7,8 @@ type NumberTrack = { from: number; to: number; write: (value: number) => void };
 export class ThemeTransition {
   private readonly colors = new Map<THREE.Color, ColorTrack>();
   private readonly numbers = new Map<object, Map<PropertyKey, NumberTrack>>();
-  private readonly startedAt = performance.now() / 1000;
+  private lastTime = performance.now() / 1000;
+  private elapsed = 0;
 
   constructor(private readonly duration = 0.65) {}
 
@@ -29,9 +30,11 @@ export class ThemeTransition {
   }
 
   /** Register all targets first, so lighting overrides never flash base values. */
-  update(nowSeconds: number) {
+  update(nowSeconds: number, speed = 1) {
     // Use the RAF's real clock, independent of capped physics timesteps.
-    const elapsed = Math.min(this.duration, Math.max(0, nowSeconds - this.startedAt));
+    this.elapsed += Math.max(0, nowSeconds - this.lastTime) * speed;
+    this.lastTime = nowSeconds;
+    const elapsed = Math.min(this.duration, this.elapsed);
     const t = this.duration > 0 ? elapsed / this.duration : 1;
     // Match music-theme.css: cubic-bezier(0.4, 0, 0.2, 1). Solve its
     // horizontal coordinate so the WebGL scene and DOM use the same timing.

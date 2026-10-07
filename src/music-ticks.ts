@@ -1,3 +1,6 @@
+import { followMusicMotionSpeed } from "./music-motion-ui";
+import type { ArchiveNavigation } from "./archive-loop";
+
 type MusicTickItem = { index: number; title: string };
 
 /** Persistent slots morph independently; one shared indicator carries selection. */
@@ -68,7 +71,7 @@ export function setupMusicTicks(host: HTMLElement) {
   reducedQuery.addEventListener("change", applyReduced);
 
   return {
-    update(items: MusicTickItem[], selected: number, reduceMotion: boolean) {
+    update(items: MusicTickItem[], selected: number, reduceMotion: boolean, _navigation?: ArchiveNavigation, _loop = true) {
       if (disposed) return;
       reduced = reduceMotion;
       applyReduced();
@@ -122,11 +125,11 @@ export function setupMusicTicks(host: HTMLElement) {
           ripples.get(mark)?.cancel();
           ripples.delete(mark);
           if (item && !instant) {
-            const animation = mark.animate([
+            const animation = followMusicMotionSpeed(mark.animate([
               from,
               { height: contracted, opacity: 0.2, offset: 0.4 },
               { height: rest, opacity: 0.28 },
-            ], { duration: 560, delay, easing: "cubic-bezier(.22,.65,.28,1)", fill: "backwards" });
+            ], { duration: 560, delay, easing: "cubic-bezier(.22,.65,.28,1)", fill: "backwards" }));
             ripples.set(mark, animation);
             animation.onfinish = () => {
               if (ripples.get(mark) === animation) ripples.delete(mark);

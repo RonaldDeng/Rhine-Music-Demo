@@ -1,8 +1,8 @@
 import * as THREE from "three";
 import type { ThemeTransition } from "./theme-transition.ts";
 
-// Reuse the existing Blender shell. Its source bounds are 4.3 × 3.7 × 0.26;
-// normalise baked geometry once, keeping the extraction/camera centre unchanged.
+// V0.4.0 is authored at its final dimensions by art/build-music-case.mjs.
+// Keep the shelf/camera centre stable while rebuilding the shell construction.
 export const MUSIC_MODEL = {
   width: 4.45,
   height: 3.35,
@@ -10,14 +10,22 @@ export const MUSIC_MODEL = {
   center: { x: 0, y: 1.85, z: 0 },
 } as const;
 
-// The artwork is a surface print in front of every glass vertex (max z=.07).
-// Keep its native proportions and a visible glass border on all four sides.
+// A replaceable paper insert, inside the cover: rear tray < print < front lid.
+// The plane never shares a depth with the cover or the retaining frame.
 export const MUSIC_COVER = {
-  width: 2.98,
-  height: 2.98,
-  x: 0.14,
+  width: 3.06,
+  height: 3.06,
+  x: 0.17,
   y: MUSIC_MODEL.center.y,
-  z: MUSIC_MODEL.depth / 2 + 0.012,
+  z: 0.027,
+} as const;
+
+export const MUSIC_CASE_LAYERS = {
+  rearFront: -0.032,
+  print: MUSIC_COVER.z,
+  lidBack: 0.052,
+  lidFront: MUSIC_MODEL.depth / 2,
+  spineRight: -1.875,
 } as const;
 
 type GlassFinish = Pick<THREE.MeshPhysicalMaterial,
@@ -28,34 +36,35 @@ const MUSIC_GLASS_FINISH: Record<string, {
   dayColor: string;
 }> = {
   Frosted_Polymer: {
-    baseline: { transmission: 0.96, thickness: 0.026, roughness: 0.4, attenuationDistance: 4.5 },
-    day: { transmission: 0.88, thickness: 0.10, roughness: 0.48, attenuationDistance: 1.2 },
-    dayColor: "#f3f0e9",
+    baseline: { transmission: 0.96, thickness: 0.018, roughness: 0.34, attenuationDistance: 5 },
+    day: { transmission: 0.94, thickness: 0.022, roughness: 0.4, attenuationDistance: 3.8 },
+    dayColor: "#fffdf8",
   },
   Ivory_Edges: {
-    baseline: { transmission: 0.84, thickness: 0.06, roughness: 0.25, attenuationDistance: 4.5 },
-    day: { transmission: 0.66, thickness: 0.10, roughness: 0.34, attenuationDistance: 1.2 },
-    dayColor: "#e6ddd1",
+    // The reference spine transmits blurred shelf bands. A very high roughness
+    // erases those bands into a flat white strip, even at high transmission.
+    baseline: { transmission: 0.88, thickness: 0.06, roughness: 0.25, attenuationDistance: 4.5 },
+    day: { transmission: 0.84, thickness: 0.08, roughness: 0.3, attenuationDistance: 3.2 },
+    dayColor: "#e7e1d8",
   },
   Optical_Diffuser: {
-    baseline: { transmission: 0.66, thickness: 0.035, roughness: 0.4, attenuationDistance: 4.5 },
-    day: { transmission: 0.56, thickness: 0.07, roughness: 0.46, attenuationDistance: 1.2 },
-    dayColor: "#eee8df",
+    baseline: { transmission: 0.8, thickness: 0.038, roughness: 0.38, attenuationDistance: 4.5 },
+    day: { transmission: 0.7, thickness: 0.05, roughness: 0.46, attenuationDistance: 2 },
+    dayColor: "#ece6dc",
   },
 };
 
 export function normalizeMusicGeometry(geometry: THREE.BufferGeometry) {
   if (geometry.userData.musicDimensions) return geometry;
-  geometry.translate(0, -MUSIC_MODEL.center.y, 0);
-  geometry.scale(MUSIC_MODEL.width / 4.3, MUSIC_MODEL.height / 3.7, MUSIC_MODEL.depth / 0.26);
-  geometry.translate(0, MUSIC_MODEL.center.y, 0);
+  // Compatibility entry point for scene/viewer ownership. No post-load scaling:
+  // rounded corners, the inset seat and the cover gap are authored in one space.
   geometry.userData.musicDimensions = true;
   geometry.computeBoundingBox();
   geometry.computeBoundingSphere();
   return geometry;
 }
 
-/** All three music contexts share soft frosted glass beneath a sharp surface print. */
+/** All music contexts share the same three physical materials and insert gap. */
 export function configureMusicGlass(surface: string, material: THREE.MeshPhysicalMaterial) {
   material.color.set("#fffdfa");
   material.metalness = 0;
@@ -63,13 +72,56 @@ export function configureMusicGlass(surface: string, material: THREE.MeshPhysica
   material.ior = 1.46;
   material.attenuationColor.set("#f3e9db");
   material.attenuationDistance = 4.5;
-  material.clearcoat = 0.16;
-  material.clearcoatRoughness = 0.2;
+  material.clearcoat = surface === "Ivory_Edges" ? 0.16 : 0.08;
+  material.clearcoatRoughness = surface === "Ivory_Edges" ? 0.2 : 0.38;
   material.transparent = false;
   material.opacity = 1;
+  // Keep V0.4.0's single-sided transmission path while tuning the finish.
+  material.side = THREE.FrontSide;
   const finish = MUSIC_GLASS_FINISH[surface];
   if (finish) Object.assign(material, finish.baseline);
   material.userData.musicShell = true;
+  const compile = material.onBeforeCompile;
+  material.onBeforeCompile = (shader, renderer) => {
+    compile.call(material, shader, renderer);
+    shadeMusicGlass(shader, surface);
+  };
+  material.customProgramCacheKey = () => `music-case-v4-zoned-frost-${surface}`;
+}
+
+/**
+ * Three's transmission mip estimate assumes distant contents. Our paper is
+ * only .025 units behind an .018-unit lid. Keep the small footprint over that
+ * insert, but let the uncovered glass diffuse the distant shelf behind it.
+ * Local coordinates keep the finish attached to both instances and extracted
+ * cases. A soft shoulder outside the insert prevents a visible square seam.
+ * No normal noise, extra texture/pass, or change to the paper sampling is needed.
+ */
+export function shadeMusicGlass(shader: THREE.WebGLProgramParametersWithUniforms, surface: string) {
+  if (surface !== "Frosted_Polymer" || shader.fragmentShader.includes("musicThinLid")) return;
+  shader.vertexShader = "varying vec2 vMusicLidPosition;\n" + shader.vertexShader;
+  shader.vertexShader = shader.vertexShader.replace(
+    "#include <begin_vertex>",
+    "#include <begin_vertex>\nvMusicLidPosition = position.xy;",
+  );
+  shader.fragmentShader = `
+    varying vec2 vMusicLidPosition;
+    float musicPaperProximity() {
+      vec2 paperEdge = abs(vMusicLidPosition - vec2(${MUSIC_COVER.x}, ${MUSIC_COVER.y}))
+        - vec2(${MUSIC_COVER.width / 2}, ${MUSIC_COVER.height / 2});
+      return 1.0 - smoothstep(0.015, 0.15, max(paperEdge.x, paperEdge.y));
+    }
+  ` + shader.fragmentShader;
+  shader.fragmentShader = shader.fragmentShader.replace(
+    "#include <transmission_pars_fragment>",
+    THREE.ShaderChunk.transmission_pars_fragment.replace(
+      "float lod = log2( transmissionSamplerSize.x ) * applyIorToRoughness( roughness, ior );",
+      `// musicThinLid: preserve nearby paper; diffuse the uncovered margin.
+      float paperProximity = musicPaperProximity();
+      float lod = log2( transmissionSamplerSize.x ) * applyIorToRoughness( roughness, ior )
+        * mix(1.0, 0.16, paperProximity);`,
+    ),
+  );
 }
 
 /** Pale backgrounds need a little more body density and a readable matte rim. */
@@ -94,15 +146,15 @@ export function musicAssemblyPart(surface: string) {
   return "carrier";
 }
 
-/** Clarity applies to the glass substrate only; the cover never enters this path. */
+/** Clarity softens the lid while the separate translucent spine keeps its finish. */
 export function setMusicGlassClarity(material: THREE.MeshPhysicalMaterial, clarity: number, warmth = 0) {
   // Inspection softens the frosting slightly; it never becomes polished plastic.
-  // The image sits ahead of this material and remains completely independent.
+  // The paper remains an independent, stable opaque print inside the lid.
   const daylight = THREE.MathUtils.clamp(warmth, 0, 1);
   material.roughness = THREE.MathUtils.lerp(
     THREE.MathUtils.lerp(MUSIC_GLASS_FINISH.Frosted_Polymer.baseline.roughness,
       MUSIC_GLASS_FINISH.Frosted_Polymer.day.roughness, daylight),
-    THREE.MathUtils.lerp(0.3, 0.44, daylight),
+    THREE.MathUtils.lerp(0.27, 0.34, daylight),
     THREE.MathUtils.clamp(clarity, 0, 1),
   );
 }
@@ -124,6 +176,6 @@ export function createAlbumPrintMaterial(map: THREE.Texture) {
       "outgoingLight = min(outgoingLight, diffuseColor.rgb);\n#include <opaque_fragment>",
     );
   };
-  material.customProgramCacheKey = () => "album-diffuse-print-v1";
+  material.customProgramCacheKey = () => "album-diffuse-print-v4";
   return material;
 }

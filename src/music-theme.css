@@ -107,7 +107,7 @@
     --music-night-veil-start,
     --music-night-veil-mid,
     --music-night-veil-end;
-  transition-duration: 650ms;
+  transition-duration: calc(650ms * var(--music-motion-scale, 1));
   transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
 }
 

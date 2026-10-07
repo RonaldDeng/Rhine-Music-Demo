@@ -1,0 +1,30 @@
+{
+  "sourceHash": "371f824f4d98",
+  "steadyState": {
+    "callbacks": 601,
+    "sceneCalls": 601,
+    "pendingContinuations": 1
+  },
+  "opaqueBootSignal": {
+    "requestedRenderScene": false,
+    "callbacks": 61,
+    "sceneCalls": 61,
+    "respected": false
+  },
+  "coldCounter": {
+    "firstFrameAtMs": 30000,
+    "displayed": "0 FPS / 暖昼"
+  },
+  "hiddenResume": {
+    "hiddenSceneCalls": 0,
+    "remainingContinuations": 1,
+    "resumedTextClockJumpSeconds": 300
+  },
+  "slowTimings": [
+    { "fps": 60, "filmSeconds": 11.6, "wallSeconds": 11.6, "prologueWallSeconds": 6.4 },
+    { "fps": 20, "filmSeconds": 11.6, "wallSeconds": 11.6, "prologueWallSeconds": 6.45 },
+    { "fps": 10, "filmSeconds": 11.6, "wallSeconds": 23.2, "prologueWallSeconds": 12.9 },
+    { "fps": 5, "filmSeconds": 11.6, "wallSeconds": 46.4, "prologueWallSeconds": 25.8 }
+  ],
+  "scope": "Observed before startup fixes. CPU control-flow/timeline evidence only; does not measure GPU work or establish a persistent renderer/resource leak."
+}

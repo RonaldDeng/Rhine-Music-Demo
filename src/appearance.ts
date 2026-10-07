@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { glassRevealGLSL, frostedTransmissionGLSL, FROSTED_ROUGHNESS } from "./glass-reveal.ts";
 import { internalOpticsFragment } from "./internal-optics.ts";
-import { setMusicGlassClarity, setMusicGlassTheme } from "./music-model.ts";
+import { setMusicGlassClarity, setMusicGlassTheme, shadeMusicGlass } from "./music-model.ts";
 import { ThemeTransition } from "./theme-transition.ts";
 
 import type { MusicSelectionLighting } from "./music-lighting";
@@ -88,6 +88,7 @@ export class CardAppearance {
             "#include <color_fragment>\nfloat coverage = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));\nif (archiveQuality <= coverage) discard;",
           );
         }
+        if (mesh.userData.musicShell) shadeMusicGlass(shader, name);
         this.musicLighting?.shade(shader, name);
       };
       mat.customProgramCacheKey = () =>

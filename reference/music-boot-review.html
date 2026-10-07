@@ -1,76 +1,53 @@
 <!doctype html>
 <html lang="zh-CN">
-  <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>音乐启动 Logo 尺寸检查</title>
-    <style>
-      .boot-review-controls { position:fixed;right:16px;bottom:16px;z-index:2000;width:min(405px,calc(100vw - 32px));padding:14px;background:#faf9f2ed;border:1px solid #c5c6bd;color:#222;font:12px/1.6 system-ui,sans-serif;box-shadow:0 4px 24px #0001; }
-      .boot-review-controls strong { display:block;font-size:13px;margin-bottom:8px; }
-      .boot-review-buttons { display:flex;gap:6px; }
-      .boot-review-controls button { padding:7px 10px;border:1px solid #abb0a9;color:#222;background:#fff;cursor:pointer;font:inherit; }
-      .boot-review-controls button[aria-pressed=true] { background:#26312b;color:#fff; }
-      .boot-review-controls output { display:block;margin-top:8px;white-space:pre-wrap;font:11px/1.7 ui-monospace,monospace; }
-    </style>
-  </head>
-  <body>
-    <main id="stage" class="music-app" data-mode="archive" data-theme="day"></main>
-    <!-- Outside the music parent: MusicBoot makes its own siblings inert. -->
-    <aside class="boot-review-controls" aria-label="启动画面检查控制">
-      <strong>启动 Logo 尺寸检查 · 固定画面 · 无声音 / 无三维渲染</strong>
-      <div class="boot-review-buttons">
-        <button type="button" data-review-phase="logo" aria-pressed="true">主 Logo</button>
-        <button type="button" data-review-phase="scan" aria-pressed="false">扫描圆环</button>
-        <button type="button" data-review-phase="welcome" aria-pressed="false">欢迎 Logo</button>
-      </div>
-      <output id="boot-review-metrics" aria-live="polite">正在载入…</output>
-    </aside>
-    <script type="module">
-      // Match the music application's stylesheet imports and nesting. This is
-      // intentionally not the legacy archive stylesheet-only review page.
-      import "/src/style.css";
-      import "/src/quality-settings.css";
-      import "/src/document-decryption.css";
-      import "/src/decryption.css";
-      import "/src/music.css";
-      import { MusicBoot } from "/src/music-boot.ts";
-
-      const parent = document.querySelector("#stage");
-      const output = document.querySelector("#boot-review-metrics");
-      const phases = {
-        logo: { time:5.56, selector:".boot-logo > svg", width:296, height:177, name:"主 Logo" },
-        scan: { time:15.5, selector:".scan > svg", width:1920, height:1080, name:"扫描圆环" },
-        welcome: { time:20.4, selector:".welcome-logo > svg", width:203, height:121, name:"欢迎 Logo" },
-      };
-      let phase = "logo";
-      const boot = new MusicBoot(parent, { reduced:false });
-      function fit() {
-        parent.dataset.layout = innerWidth/innerHeight<1.05 ? "portrait" : innerWidth<1100 ? "compact" : "desktop";
-      }
-      function measure() {
-        const target = phases[phase];
-        const svg = parent.querySelector(target.selector);
-        const style = getComputedStyle(svg), box = svg.getBoundingClientRect(), bounds = parent.getBoundingClientRect();
-        const width = parseFloat(style.width), height = parseFloat(style.height);
-        const scale = Math.min(bounds.width/1920,bounds.height/1080);
-        const passed = Math.abs(width-target.width)<.1 && Math.abs(height-target.height)<.1;
-        const evidence = { phase, appTime:target.time, referenceFrame:Number(parent.querySelector(".music-boot-stage").dataset.bootFrame), selector:target.selector, cssWidth:width, cssHeight:height, screenWidth:box.width, screenHeight:box.height, stageScale:scale, passed };
-        output.dataset.evidence = JSON.stringify(evidence);
-        output.textContent = `${passed ? "尺寸正常" : "尺寸异常"} · ${target.name} · 原片第 ${evidence.referenceFrame} 帧\nCSS ${width} × ${height}（设计 ${target.width} × ${target.height}）\n屏幕 ${box.width.toFixed(1)} × ${box.height.toFixed(1)} · 舞台缩放 ${scale.toFixed(4)}\nApp ${target.time.toFixed(2)}s / 重播后 ${(target.time-1.76).toFixed(2)}s`;
-      }
-      function freeze(next) {
-        phase = next;
-        fit();
-        boot.start(0,true);
-        // start(0) sets startedAt=-1.76, so subtract that initial app time.
-        boot.update(phases[phase].time-1.76);
-        document.querySelectorAll("[data-review-phase]").forEach(button=>button.setAttribute("aria-pressed",String(button.dataset.reviewPhase===phase)));
-        measure();
-      }
-      document.querySelectorAll("[data-review-phase]").forEach(button=>button.addEventListener("click",()=>freeze(button.dataset.reviewPhase)));
-      window.addEventListener("resize",()=>{fit();measure();});
-      await Promise.all([document.fonts.load("400 20px MiSans"),document.fonts.load("600 20px MiSans")]);
-      freeze("logo");
-    </script>
-  </body>
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>V0.4.0 开场时序检查</title>
+  <style>
+    .boot-review-controls{position:fixed;right:16px;bottom:16px;z-index:2000;width:min(480px,calc(100vw - 32px));box-sizing:border-box;padding:14px;background:#faf9f2ed;border:1px solid #c5c6bd;color:#222;font:12px/1.6 system-ui,sans-serif}
+    .boot-review-controls strong,.boot-review-controls output{display:block;margin-bottom:8px}
+    .boot-review-controls button{padding:7px 9px;margin:2px;border:1px solid #abb0a9;background:#fff;cursor:pointer;color:#222}
+    .boot-review-controls button[aria-pressed=true]{background:#26312b;color:#fff}
+    .boot-review-controls label{display:inline-flex;gap:6px;margin:8px 10px 0 0}
+  </style>
+</head>
+<body>
+  <main id="stage" class="music-app" data-mode="archive" data-theme="day"></main>
+  <aside class="boot-review-controls" aria-label="启动画面检查控制">
+    <strong>V0.4.0 开场 · 固定节点 · 无声音 / 无三维渲染</strong>
+    <div>
+      <button data-time="1.45">品牌</button><button data-time="2.35">圆环</button>
+      <button data-time="4.4">标语</button><button data-time="6.1">衔接</button>
+      <button id="play">完整播放</button>
+    </div>
+    <label>主题<select id="theme"><option value="day">暖昼</option><option value="night">深夜</option></select></label>
+    <label>比例<select id="ratio"><option value="full">窗口</option><option value="portrait">393 × 852</option><option value="wide">超宽</option></select></label>
+    <output id="metrics"></output>
+  </aside>
+  <script type="module">
+    import '/src/style.css';
+    import '/src/music.css';
+    import '/src/music-boot.css';
+    import {MusicOpening,musicOpeningFrame} from '/src/music-opening.ts';
+    const parent=document.querySelector('#stage'), output=document.querySelector('#metrics');
+    const opening=new MusicOpening(parent);
+    let loop=0,start=0,current=4.4;
+    function show(time){
+      current=time;opening.update(time);
+      const title=parent.querySelector('[data-opening=title]');
+      const rect=title.getBoundingClientRect();
+      output.textContent=`${time.toFixed(2)}s · ${musicOpeningFrame(time).phase} · 标语 ${title.textContent} · ${Math.round(rect.width)} px`;
+    }
+    for(const button of document.querySelectorAll('[data-time]'))button.addEventListener('click',()=>{cancelAnimationFrame(loop);show(Number(button.dataset.time));});
+    document.querySelector('#play').addEventListener('click',()=>{cancelAnimationFrame(loop);start=performance.now();function frame(now){show(Math.min(6.82,(now-start)/1000));if(current<6.82)loop=requestAnimationFrame(frame);}loop=requestAnimationFrame(frame);});
+    document.querySelector('#theme').addEventListener('change',event=>{parent.dataset.theme=event.target.value;});
+    document.querySelector('#ratio').addEventListener('change',event=>{
+      parent.style.cssText=event.target.value==='portrait'?'width:393px;height:852px;max-width:100vw;max-height:100vh;left:50%;transform:translateX(-50%);':event.target.value==='wide'?'height:42vw;max-height:100vh;':'';
+      parent.classList.toggle('boot-review-portrait',event.target.value==='portrait');
+      show(current);
+    });
+    show(current);
+  </script>
+  <style>.boot-review-portrait .music-opening-statement p{font-size:23px;letter-spacing:.015em}.boot-review-portrait .music-opening-orbit{width:86%}.boot-review-portrait .music-opening-brand{left:20px;top:29px}</style>
+</body>
 </html>

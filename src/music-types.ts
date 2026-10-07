@@ -16,13 +16,17 @@ export interface MusicTrack {
   lossless?: boolean;
   browserPlayable: boolean;
   audioUrl: string;
+  /** Local FFmpeg PCM route; original source remains read-only. */
+  decodedAudioUrl?: string;
+  localDecodable?: boolean;
   relativePath: string;
 }
 
 export interface MusicProducer {
   name: string;
   role: string;
-  source: "local" | "MusicBrainz" | "manual";
+  source: "local" | "MusicBrainz" | "QQ Music" | "manual";
+  trackId?: string;
   trackTitle?: string;
   url?: string;
 }
@@ -53,6 +57,15 @@ export interface MusicAlbum {
   coverUrl?: string;
   tracks: MusicTrack[];
   producers: MusicProducer[];
+  creditsLookup?: {
+    status: "unqueried" | "matched" | "partial" | "not-found" | "uncertain" | "error";
+    source: "QQ Music";
+    checkedAt?: string;
+    matchedTracks?: number;
+    totalTracks?: number;
+    error?: string;
+    retryAt?: string;
+  };
   offline: boolean;
   online?: {
     status: "unqueried" | "matched" | "uncertain" | "not-found" | "error";
@@ -111,6 +124,18 @@ export interface MusicLibrary {
     notFound: number;
     failed: number;
     currentAlbum?: string;
+    error?: string;
+  };
+  credits?: {
+    running: boolean;
+    completed: number;
+    total: number;
+    updated: number;
+    notFound: number;
+    failed: number;
+    currentAlbum?: string;
+    trackCompleted?: number;
+    trackTotal?: number;
     error?: string;
   };
 }

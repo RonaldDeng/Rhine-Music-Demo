@@ -34,6 +34,7 @@ export class MusicPresentation {
   private wantsDetail = false;
   private revision = 0;
   private browseHidden = false;
+  private cameraEntered = false;
 
   constructor(private readonly ports: MusicPresentationPorts) {}
 
@@ -67,6 +68,9 @@ export class MusicPresentation {
     this.pendingSelection = selection;
     this.wantsDetail = openAfter;
     const switchInDetail = openAfter && selection.route !== "archive";
+    // Input during the 140 ms browse exit has not yet begun an extraction.
+    // Keep only the latest destination and settle its rail before opening it.
+    if (this.phase === "opening" && !this.cameraEntered) return;
     if (this.phase === "archive") {
       this.commitSelection();
       if (openAfter) {
@@ -130,6 +134,7 @@ export class MusicPresentation {
     this.pendingSelection = undefined;
     this.wantsDetail = false;
     this.browseHidden = false;
+    this.cameraEntered = false;
     this.phase = "archive";
     this.ports.mode("archive");
   }
@@ -138,12 +143,22 @@ export class MusicPresentation {
     const revision = ++this.revision;
     this.phase = "opening";
     this.browseHidden = false;
+    this.cameraEntered = false;
     this.ports.mode("detail");
     this.ports.prepareMenu();
     this.ports.hideBrowse(() => {
-      if (revision === this.revision) this.browseHidden = true;
+      if (revision !== this.revision) return;
+      this.browseHidden = true;
+      if (this.pendingSelection) {
+        this.phase = "selecting";
+        this.commitSelection();
+        return;
+      }
+      // Retire the previous text before the physical extraction begins. The
+      // callback also makes a reduced-motion synchronous exit deterministic.
+      this.cameraEntered = true;
+      this.ports.enterCamera();
     });
-    this.ports.enterCamera();
   }
 
   private beginExit() {

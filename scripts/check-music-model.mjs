@@ -4,7 +4,8 @@ import { mock } from "node:test";
 import ts from "typescript";
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
-import { MUSIC_MODEL, MUSIC_COVER, normalizeMusicGeometry, configureMusicGlass, createAlbumPrintMaterial } from "../src/music-model.ts";
+import { MUSIC_MODEL, MUSIC_COVER, MUSIC_CASE_LAYERS, normalizeMusicGeometry, configureMusicGlass, createAlbumPrintMaterial, shadeMusicGlass } from "../src/music-model.ts";
+import { MUSIC_CD_ASSET } from "../src/music-cd-asset.ts";
 
 // Match the existing presentation/lighting checks: transpile production code
 // with parameter properties, then resolve its imports from the original file.
@@ -23,25 +24,31 @@ const { CardAppearance } = await import(await sourceModule("../src/appearance.ts
   "./theme-transition.ts": transitionUrl,
 }));
 
-const bytes = await fs.readFile(new URL("../public/assets/music-cd.glb", import.meta.url));
+const bytes = await fs.readFile(new URL(`../public/${MUSIC_CD_ASSET.split("?")[0]}`, import.meta.url));
 const gltf = await new GLTFLoader().parseAsync(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength), "");
 gltf.scene.updateMatrixWorld(true);
 const surfaces = [];
 const appearance = new CardAppearance();
 const appearanceModel = new THREE.Group();
 const baseline = new Map();
+const geometryBounds = new Map();
+let triangles = 0;
 gltf.scene.traverse((object) => {
   if (!(object instanceof THREE.Mesh)) return;
   const surface = object.material.name;
   surfaces.push(surface);
   normalizeMusicGeometry(object.geometry);
+  geometryBounds.set(surface, object.geometry.boundingBox.clone());
+  triangles += object.geometry.index.count / 3;
   const once = [...object.geometry.attributes.position.array];
   normalizeMusicGeometry(object.geometry);
   assert.deepEqual([...object.geometry.attributes.position.array], once, "normalisation must never compound");
   const material = new THREE.MeshPhysicalMaterial();
   configureMusicGlass(surface, material);
-  assert.ok(material.transmission >= 0.65, `${surface} remains glass`);
-  const [minimum, maximum] = surface === "Ivory_Edges" ? [0.23, 0.28] : [0.38, 0.42];
+  assert.equal(material.side, THREE.FrontSide,
+    "finish tuning preserves the single-sided transmission path and avoids capturing the shell over its own insert");
+  assert.ok(material.transmission >= 0.6, `${surface} remains glass`);
+  const [minimum, maximum] = surface === "Ivory_Edges" ? [0.24, 0.3] : [0.32, 0.4];
   assert.ok(material.roughness >= minimum && material.roughness <= maximum, `${surface} retains the reference's soft frosted finish`);
   assert.ok(material.clearcoat <= 0.18, `${surface} avoids a polished plastic coat`);
   baseline.set(surface, {
@@ -61,7 +68,12 @@ const size = bounds.getSize(new THREE.Vector3());
 for (const [axis, dimension] of [["x", "width"], ["y", "height"], ["z", "depth"]])
   assert.ok(Math.abs(size[axis] - MUSIC_MODEL[dimension]) < 1e-6, `actual GLB ${dimension} matches the camera dimensions`);
 assert.ok(Math.abs(bounds.getCenter(new THREE.Vector3()).y - MUSIC_MODEL.center.y) < 1e-6);
-assert.ok(MUSIC_COVER.z > bounds.max.z + 0.01, "cover is in front of every transmitting surface");
+assert.ok(triangles <= 1200, "new construction stays below the shelf geometry budget");
+assert.equal(gltf.scene.children[0].userData.version, "0.4.0", "runtime loads the reconstructed native-size case");
+assert.ok(MUSIC_COVER.z < geometryBounds.get("Frosted_Polymer").min.z - 0.02, "paper sits behind the front lid with a real air gap");
+assert.ok(MUSIC_COVER.z > MUSIC_CASE_LAYERS.rearFront + 0.04, "paper sits ahead of the rear tray");
+assert.ok(MUSIC_COVER.x - MUSIC_COVER.width / 2 > MUSIC_CASE_LAYERS.spineRight + 0.4, "cover leaves the high-frost spine unobstructed");
+assert.ok(geometryBounds.get("Ivory_Edges").max.x < MUSIC_COVER.x - MUSIC_COVER.width / 2, "high-frost strip never covers artwork");
 assert.ok(MUSIC_COVER.x - MUSIC_COVER.width / 2 > bounds.min.x);
 assert.ok(MUSIC_COVER.x + MUSIC_COVER.width / 2 < bounds.max.x);
 assert.ok(MUSIC_COVER.y - MUSIC_COVER.height / 2 > bounds.min.y);
@@ -112,10 +124,14 @@ for (const theme of ["day", "night", "dusk", "day", "dusk", "night", "day"]) {
   for (const quality of [0, 0.5, 1]) for (const clarity of [0, 0.5, 1]) {
     const state = renderState(quality, clarity);
     const glass = state.get("Frosted_Polymer");
-    const [minimum, maximum] = theme === "day" ? [0.42, 0.50] : [0.28, 0.42];
+    const [minimum, maximum] = theme === "day" ? [0.33, 0.41] : [0.26, 0.35];
     assert.ok(glass.roughness >= minimum && glass.roughness <= maximum, `${theme} retains its frosted finish after each clarity update`);
     if (clarity === 1 && theme !== "day")
-      assert.ok(glass.roughness >= 0.28 && glass.roughness <= 0.32, "Night/dusk inspection retains its previous light frosting");
+      assert.ok(glass.roughness >= 0.26 && glass.roughness <= 0.28, "Night/dusk inspection keeps the new thin lid lightly frosted");
+    const spine = state.get("Ivory_Edges");
+    assert.ok(spine.roughness >= 0.24 && spine.roughness <= 0.31, "spine preserves blurred background bands instead of averaging them into a flat strip");
+    assert.ok(spine.thickness > glass.thickness * 2 && spine.transmission < glass.transmission, "spine density comes from its optical depth while the lid stays light");
+    assert.ok(spine.transmission >= 0.84, "spine stays translucent rather than reading as a solid white strip");
     for (const [surface, material] of state) {
       const original = baseline.get(surface);
       assert.ok(material.transmission > 0.5 && material.transmission < 1, `${theme} ${surface} stays transmissive glass`);
@@ -180,4 +196,28 @@ try {
 } finally {
   clock.mock.restore();
 }
-console.log("Music glass model passed: actual GLB dimensions, independent artwork, stronger daytime frosting through every clarity state, restored night/dusk glass, and smooth 650 ms theme round trips.");
+const shader = {
+  vertexShader: THREE.ShaderLib.physical.vertexShader,
+  fragmentShader: THREE.ShaderLib.physical.fragmentShader,
+  uniforms: {},
+};
+shadeMusicGlass(shader, "Frosted_Polymer");
+assert.ok(shader.fragmentShader.includes("musicThinLid"));
+assert.ok(shader.fragmentShader.includes("mix(1.0, 0.16, paperProximity)"), "nearby paper retains its small footprint while the uncovered margin diffuses the background");
+assert.ok(shader.vertexShader.includes("vMusicLidPosition = position.xy"), "frost coordinates follow the geometry through instancing, extraction and rotation");
+const compiledOnce = { vertex: shader.vertexShader, fragment: shader.fragmentShader };
+shadeMusicGlass(shader, "Frosted_Polymer");
+assert.deepEqual({ vertex: shader.vertexShader, fragment: shader.fragmentShader }, compiledOnce, "shader composition is idempotent");
+const preparedLid = appearanceModel.children.find(child => child.userData.surface === "Frosted_Polymer").material;
+const preparedShader = {
+  vertexShader: THREE.ShaderLib.physical.vertexShader,
+  fragmentShader: THREE.ShaderLib.physical.fragmentShader,
+  uniforms: {},
+};
+preparedLid.onBeforeCompile(preparedShader, {});
+assert.ok(preparedShader.fragmentShader.includes("mix(1.0, 0.16, paperProximity)"), "prepared selection/returning/viewer materials retain the same spatial frosting as the shelf");
+assert.ok(!preparedShader.fragmentShader.includes("archiveTransmissionLod"), "legacy full-panel frosting cannot override the protected paper footprint");
+const spineShader = { fragmentShader: "#include <transmission_pars_fragment>", uniforms: {} };
+shadeMusicGlass(spineShader, "Ivory_Edges");
+assert.equal(spineShader.fragmentShader, "#include <transmission_pars_fragment>", "spine retains the wider diffuse transmission footprint");
+console.log(`Music case V0.4.0 passed: new ${triangles}-triangle/3-batch GLB, native dimensions, recessed insert, high-frost spine, thin-lid optics, and continuous theme/clarity round trips.`);

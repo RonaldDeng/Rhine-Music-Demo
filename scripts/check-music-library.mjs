@@ -110,6 +110,52 @@ test('incremental scan detects additions/removals, caches unchanged tags, and pr
   assert.equal(store.snapshot().albums[0].offline, false)
 })
 
+test('v3 metadata upgrades from the saved index without source reparsing and derives v4 playback fields', async (t) => {
+  let reads = 0
+  const metadataParser = async (file) => {
+    reads += 1
+    return { common: { album: 'Cached album', artist: 'Cached artist', genre: ['Jazz'], composer: ['Cached composer'] }, format: { codec: file.endsWith('.dsf') ? 'DSD' : file.endsWith('.ape') ? 'APE' : 'FLAC', duration: 123, bitsPerSample: 24, sampleRate: 96000, numberOfChannels: 2, lossless: true } }
+  }
+  const { root, store } = await fixture(t, { metadataParser })
+  const folder = await fakeAlbum(root, 'Cached', ['01.flac', '02.dsf'])
+  await store.scan()
+  const before = JSON.parse(JSON.stringify(store.snapshot()))
+  const sourceBefore = await fs.readFile(path.join(folder, '01.flac'))
+  for (const track of store.index.albums[0].tracks) {
+    track._metadataVersion = 3
+    if (track.format === 'DSF') track.localDecodable = false
+  }
+  await store.saveIndex()
+  reads = 0
+  const restored = await new MusicLibraryStore({ dataDir: store.dataDir, metadataParser }).init()
+  assert.deepEqual(JSON.parse(JSON.stringify(restored.snapshot().albums)), before.albums, 'cached library remains available before the startup scan')
+  await restored.scan()
+  assert.equal(reads, 0, 'v3 contains the same parsed tag schema; do not re-read source tags merely for v4 routes')
+  assert.deepEqual(JSON.parse(JSON.stringify(restored.snapshot().albums)), before.albums, 'technical fields, local credits and album identity survive migration')
+  assert.ok(restored.index.albums[0].tracks.every((track) => track._metadataVersion === 4))
+  const snapshot = restored.snapshot()
+  const [flac, dsd] = snapshot.albums[0].tracks
+  assert.equal(flac.decodedAudioUrl, `/api/decoded-audio/${flac.id}`)
+  assert.equal(flac.localDecodable, true)
+  assert.equal(dsd.localDecodable, true)
+  assert.equal(dsd.browserPlayable, false)
+  for (const track of snapshot.albums[0].tracks) {
+    for (const key of ['_path', '_fingerprint', '_common', '_embeddedCover', '_metadataVersion']) assert.equal(key in track, false, `${key} remains private`)
+  }
+  assert.deepEqual(await fs.readFile(path.join(folder, '01.flac')), sourceBefore, 'migration never rewrites the source')
+  await fs.writeFile(path.join(folder, '03.ape'), 'new APE metadata fixture')
+  await restored.scan()
+  assert.equal(reads, 1, 'newly supported formats still require their own metadata read')
+  assert.equal(restored.snapshot().albums[0].tracks.find((track) => track.format === 'APE').codec, 'APE')
+  assert.equal(restored.snapshot().albums[0].tracks.find((track) => track.format === 'APE').localDecodable, true)
+  await fs.appendFile(path.join(folder, '01.flac'), 'changed source')
+  await restored.scan()
+  assert.equal(reads, 2, 'changed source fingerprints are not hidden by schema compatibility')
+  restored.index.albums[0].tracks.find((track) => track.format === 'FLAC')._metadataVersion = 2
+  await restored.scan()
+  assert.equal(reads, 3, 'pre-v3 schemas still reparse the missing credits metadata')
+})
+
 test('folder covers override embedded art; removing a cover reveals cached or newly extracted embedded art', async (t) => {
   const embedded = Buffer.from('embedded-test-image')
   const { root, store } = await fixture(t, { metadataParser: async (_file, options) => ({ common: { picture: options.skipCovers ? [] : [{ format: 'image/png', type: 'Cover (front)', data: embedded }] }, format: {} }) })
@@ -120,6 +166,7 @@ test('folder covers override embedded art; removing a cover reveals cached or ne
   const album = store.snapshot().albums[0]
   assert.equal(store.artworkFile(album.id).path, cover)
   assert.equal(store.artworkFile(album.id).embedded, false)
+  store.index.albums[0].tracks[0]._metadataVersion = 3
   await fs.unlink(cover)
   await store.scan()
   assert.equal(store.artworkFile(album.id).embedded, true)
@@ -158,8 +205,10 @@ test('DSD is indexed without promising browser playback, and overlapping scans c
   await Promise.all([first, second])
   assert.equal(reads, 2)
   assert.deepEqual(store.snapshot().albums[0].tracks.map((track) => track.browserPlayable), [false, false])
+  assert.deepEqual(store.snapshot().albums[0].tracks.map((track) => track.localDecodable), [true, true])
   const reloaded = await new MusicLibraryStore({ dataDir: store.dataDir }).init()
   assert.equal(reloaded.snapshot().albums.length, 1, 'cached library is available before another scan')
+  assert.deepEqual(reloaded.snapshot().albums[0].tracks.map((track) => track.localDecodable), [true, true], 'DSF and DFF are immediately available through local decoding after startup')
 })
 
 test('ambiguous online matches never assign guessed production credits or genres', async (t) => {

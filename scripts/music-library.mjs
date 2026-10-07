@@ -3,9 +3,10 @@ import { promises as fs } from 'node:fs'
 import path from 'node:path'
 import { parseFile } from 'music-metadata'
 import { AlbumIntroductionProvider } from './album-introductions.mjs'
-import { cleanRootInput, isFullyQualified, isIgnoredDirectory, isIgnoredFile, isInside, renameWithRetry, samePath } from './platform.mjs'
+import { QQCreditsProvider } from './qq-credits.mjs'
+import { readLocalCredits } from './local-music-credits.mjs'
 
-const AUDIO_EXTENSIONS = new Set(['.flac', '.wav', '.m4a', '.mp4', '.alac', '.dsf', '.dff', '.mp3', '.aac', '.aiff', '.aif', '.ogg', '.opus'])
+const AUDIO_EXTENSIONS = new Set(['.ape', '.wv', '.wma', '.flac', '.wav', '.m4a', '.mp4', '.alac', '.dsf', '.dff', '.mp3', '.aac', '.aiff', '.aif', '.ogg', '.opus'])
 const BROWSER_EXTENSIONS = new Set(['.flac', '.wav', '.m4a', '.mp4', '.mp3', '.aac', '.ogg', '.opus'])
 const MBID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i
 const unique = (items) => [...new Set(items.filter(Boolean))]
@@ -14,7 +15,12 @@ const text = (value) => typeof value === 'string' ? value.trim() : ''
 const normalized = (value) => text(value).normalize('NFKC').toLocaleLowerCase().replace(/[\s\p{P}\p{S}]/gu, '')
 const exists = async (file) => { try { await fs.access(file); return true } catch { return false } }
 const timestamp = () => new Date().toISOString()
-const METADATA_VERSION = 2
+const METADATA_VERSION = 4
+// v4 adds indexable extensions and derives PCM routes in snapshot(); tag extraction
+// is unchanged from v3. Reuse those parsed fields without rereading every source.
+// Older schemas still need the metadata/credits migration introduced in v3.
+const COMPATIBLE_METADATA_VERSIONS = new Set([3, METADATA_VERSION])
+const creditsIdentity = (album) => hash(JSON.stringify(album.tracks.map((track) => [track.id, track.title, track.artist, track.duration, track._common?.album, track._fingerprint])))
 
 export const DEFAULT_RULES = {
   version: 1,
@@ -37,7 +43,7 @@ export async function writeJsonAtomic(file, value) {
   const temporary = `${file}.${randomUUID()}.tmp`
   try {
     await fs.writeFile(temporary, `${JSON.stringify(value, null, 2)}\n`, { mode: 0o600 })
-    await renameWithRetry(temporary, file)
+    await fs.rename(temporary, file)
   } finally {
     await fs.rm(temporary, { force: true })
   }
@@ -78,14 +84,10 @@ export function resolveGenre(album, rules) {
   return inputs.length ? `source-${hash(normalized(inputs[0]))}` : 'unclassified'
 }
 
-export function safeRootList(input) {
-  const roots = Array.isArray(input) ? input.map(cleanRootInput) : input
-  if (!Array.isArray(roots) || roots.length > 64 || roots.some((root) => typeof root !== 'string' || !isFullyQualified(root))) throw new Error('音乐目录必须是绝对路径数组（最多 64 个）')
-  // Windows paths are case-insensitive: D:\Music and d:\music are the same root.
-  const distinct = []
-  for (const root of roots.map((root) => path.resolve(root))) if (!distinct.some((seen) => samePath(seen, root))) distinct.push(root)
+export function safeRootList(roots) {
+  if (!Array.isArray(roots) || roots.length > 64 || roots.some((root) => typeof root !== 'string' || !path.isAbsolute(root) || root.includes('\0'))) throw new Error('音乐目录必须是绝对路径数组（最多 64 个）')
   // Nested roots would scan the same album twice; keep the highest selected root.
-  return distinct.filter((root) => !distinct.some((parent) => parent !== root && isInside(parent, root)))
+  return unique(roots.map((root) => path.resolve(root))).filter((root, _, all) => !all.some((parent) => parent !== root && root.startsWith(`${parent}${path.sep}`)))
 }
 
 function audioMime(file) {
@@ -97,17 +99,12 @@ export function imageMime(file) {
 }
 
 /** Root-level files are singles; nested folders are albums. Source files stay read-only. */
-export async function walkAlbums(root) {
+async function walkAlbums(root) {
   const folders = []
   const visit = async (folder) => {
-    let entries
-    try { entries = await fs.readdir(folder, { withFileTypes: true }) } catch (error) {
-      // An unreadable subfolder (permissions, removed meanwhile) must not abort the whole scan.
-      if (folder !== root && ['EACCES', 'EPERM', 'ENOENT', 'ENOTDIR'].includes(error.code)) return
-      throw error
-    }
+    const entries = await fs.readdir(folder, { withFileTypes: true })
     entries.sort((a, b) => a.name.localeCompare(b.name, 'zh-CN', { numeric: true }))
-    const files = entries.filter((entry) => entry.isFile() && !isIgnoredFile(entry.name))
+    const files = entries.filter((entry) => entry.isFile())
     const tracks = files.filter((entry) => AUDIO_EXTENSIONS.has(path.extname(entry.name).toLowerCase())).map((entry) => path.join(folder, entry.name))
     if (tracks.length) {
       const images = files.filter((entry) => /\.(png|jpe?g|webp)$/i.test(entry.name))
@@ -126,7 +123,7 @@ export async function walkAlbums(root) {
         folders.push({ folder, tracks, cover: images[0] ? path.join(folder, images[0].name) : undefined })
       }
     }
-    for (const entry of entries) if (entry.isDirectory() && !isIgnoredDirectory(entry.name)) await visit(path.join(folder, entry.name))
+    for (const entry of entries) if (entry.isDirectory() && !entry.name.startsWith('.')) await visit(path.join(folder, entry.name))
   }
   await visit(root)
   return folders
@@ -137,7 +134,7 @@ const firstString = (value) => Array.isArray(value) ? text(value[0]) : text(valu
 const numberOrUndefined = (value) => Number.isFinite(value) && value > 0 ? value : undefined
 
 export class MusicLibraryStore {
-  constructor({ dataDir, defaultRoots = [], metadataParser = parseFile, fetcher = globalThis.fetch, musicBrainzContact = process.env.MUSICBRAINZ_CONTACT, introductionProvider, onChange = () => {} }) {
+  constructor({ dataDir, defaultRoots = [], metadataParser = parseFile, fetcher = globalThis.fetch, musicBrainzContact = process.env.MUSICBRAINZ_CONTACT, introductionProvider, creditsProvider, onChange = () => {} }) {
     this.dataDir = path.resolve(dataDir)
     this.defaultRoots = defaultRoots
     this.parseFile = metadataParser
@@ -152,6 +149,8 @@ export class MusicLibraryStore {
     this.enrichStatus = { running: false, completed: 0, total: 0 }
     this.introductionsStatus = { running: false, completed: 0, total: 0, updated: 0, notFound: 0, failed: 0 }
     this.introductionProvider = introductionProvider ?? new AlbumIntroductionProvider({ fetcher, contact: () => this.musicBrainzContact })
+    this.creditsProvider = creditsProvider ?? new QQCreditsProvider({ dataDir: this.dataDir, fetcher })
+    this.creditsStatus = { running: false, completed: 0, total: 0, updated: 0, notFound: 0, failed: 0 }
     this.lastMusicBrainzRequest = 0
     this.saveChain = Promise.resolve()
   }
@@ -232,8 +231,9 @@ export class MusicLibraryStore {
         introduction: album.introduction,
         genreId, rawGenres: unique([...(album._onlineGenres ?? []), ...(album._localGenres ?? [])]),
         folder: album.folder, coverUrl: album._cover ? `/api/artwork/${album.id}?v=${album._cover.version}` : undefined,
-        tracks: album.tracks.map(({ _path, _fingerprint, _common, _embeddedCover, _metadataVersion, ...track }) => track),
+        tracks: album.tracks.map(({ _path, _fingerprint, _common, _embeddedCover, _metadataVersion, ...track }) => ({ ...track, decodedAudioUrl: `/api/decoded-audio/${track.id}`, localDecodable: true })),
         producers: album.producers ?? [], offline: !!album.offline,
+        creditsLookup: album.creditsLookup,
         online: album.online ?? { status: 'unqueried' },
       }
     })
@@ -243,6 +243,7 @@ export class MusicLibraryStore {
       roots: this.config.roots.map((root) => this.index.roots.find((entry) => entry.path === root) ?? { path: root, status: 'unscanned' }),
       scan: { ...this.scanStatus }, onlineEnabled: !!this.config.onlineEnabled, enrich: { ...this.enrichStatus },
       introductions: { ...this.introductionsStatus },
+      credits: { ...this.creditsStatus },
     }
   }
 
@@ -288,6 +289,10 @@ export class MusicLibraryStore {
             album.description = current.description
             album.descriptionSource = current.descriptionSource
           }
+          if (current?.creditsLookup?.checkedAt && creditsIdentity(current) === creditsIdentity(album) && (!album.creditsLookup?.checkedAt || current.creditsLookup.checkedAt >= album.creditsLookup.checkedAt)) {
+            album.creditsLookup = current.creditsLookup
+            album.producers = uniqueProducers([...(album.producers ?? []).filter((person) => person.source !== 'QQ Music'), ...(current.producers ?? []).filter((person) => person.source === 'QQ Music')])
+          }
         }
         this.index = { version: 1, albums: nextAlbums, roots: nextRoots, scannedAt: timestamp() }
         await this.saveIndex()
@@ -319,8 +324,8 @@ export class MusicLibraryStore {
       const stat = await fs.stat(file)
       const fingerprint = `${stat.size}:${stat.mtimeMs}`
       const old = previous?.tracks.find((track) => track._path === file)
-      if (old?._fingerprint === fingerprint && old._metadataVersion === METADATA_VERSION && (cover || old._embeddedCover !== undefined)) {
-        tracks.push(old)
+      if (old?._fingerprint === fingerprint && COMPATIBLE_METADATA_VERSIONS.has(old._metadataVersion) && (cover || old._embeddedCover !== undefined)) {
+        tracks.push(old._metadataVersion === METADATA_VERSION ? old : { ...old, _metadataVersion: METADATA_VERSION })
         if (!cover && old._embeddedCover) cover = old._embeddedCover
         continue
       }
@@ -365,6 +370,7 @@ export class MusicLibraryStore {
         _common: {
           album: text(common.album), albumartist: text(common.albumartist), year: numberOrUndefined(common.year),
           genres: unique((common.genre ?? []).map(text)), producers: unique((common.producer ?? []).map(text)),
+          credits: readLocalCredits(metadata, text(common.title) || path.parse(file).name, trackId),
           releaseId: firstString(common.musicbrainz_albumid), releaseGroupId: firstString(common.musicbrainz_releasegroupid),
           discTotal: numberOrUndefined(common.disk?.of), discNumberSource: common.disk?.no ? 'tag' : discPrefix ? 'filename' : undefined,
           comments: (common.comment ?? []).map((comment) => typeof comment === 'string' ? comment : text(comment.text)).filter(Boolean),
@@ -382,6 +388,7 @@ export class MusicLibraryStore {
     const title = entry.singleFile ? first?.title || path.parse(entry.singleFile).name : first?._common.album || path.basename(entry.folder)
     const artist = (entry.singleFile ? first?.artist : first?._common.albumartist || first?.artist) || '未知艺术家'
     const unchangedIdentity = previous && title === previous.title && artist === previous.artist && first?._common.year === previous.year && tracks.length === previous.tracks.length && (!releaseId || releaseId === previous.online?.releaseId)
+    const unchangedCredits = previous && creditsIdentity(previous) === creditsIdentity({ tracks })
     return {
       id, title, artist, year: first?._common.year,
       discCount: Math.max(1, ...tracks.map((track) => track._common.discTotal ?? track.discNumber ?? 1)),
@@ -392,9 +399,11 @@ export class MusicLibraryStore {
       genreId: 'unclassified', rawGenres: localGenres,
       folder: entry.folder, tracks, offline: false,
       producers: uniqueProducers([
-        ...tracks.flatMap((track) => track._common.producers.map((name) => ({ name, role: 'producer', source: 'local', trackTitle: track.title }))),
-        ...(unchangedIdentity ? (previous.producers ?? []).filter((person) => person.source !== 'local') : []),
+        ...tracks.flatMap((track) => track._common.credits ?? track._common.producers.map((name) => ({ name, role: '制作人', source: 'local', trackTitle: track.title, trackId: track.id }))),
+        ...(unchangedIdentity ? (previous.producers ?? []).filter((person) => !['local', 'QQ Music'].includes(person.source)) : []),
+        ...(unchangedCredits ? (previous.producers ?? []).filter((person) => person.source === 'QQ Music') : []),
       ]),
+      creditsLookup: unchangedCredits ? previous.creditsLookup : undefined,
       online: unchangedIdentity ? previous.online : { status: 'unqueried', releaseId, releaseGroupId },
       _root: root, _cover: cover, _localGenres: localGenres,
       _onlineGenres: unchangedIdentity ? previous._onlineGenres ?? [] : [],
@@ -490,6 +499,102 @@ export class MusicLibraryStore {
       return this.snapshot()
     })()
     return this.enrichPromise
+  }
+
+  async updateCredits({ albumIds, force = false } = {}) {
+    if (albumIds !== undefined && (!Array.isArray(albumIds) || albumIds.length > 10000 || albumIds.some((id) => typeof id !== 'string'))) throw new Error('albumIds 必须是专辑 ID 数组')
+    if (typeof force !== 'boolean') throw new Error('force 必须为布尔值')
+    if (this.creditsPromise) return this.creditsPromise
+    const selected = this.index.albums.filter((album) => {
+      if (album.offline || !this.config.roots.includes(album._root) || (albumIds && !albumIds.includes(album.id))) return false
+      if (force) return true
+      const cached = album.creditsLookup
+      if (!cached?.checkedAt) return true
+      if (cached.status === 'matched') return false
+      const ttl = cached.status === 'error' || cached.error ? 10 * 60_000 : 7 * 86400_000
+      return Date.now() >= Math.max(Date.parse(cached.checkedAt) + ttl || 0, Date.parse(cached.retryAt) || 0)
+    }).map((album) => ({
+      id: album.id, title: album.title, artist: album.artist, identity: creditsIdentity(album),
+      tracks: album.tracks.map((track) => ({ id: track.id, title: track.title, artist: track.artist, duration: track.duration, _common: { album: track._common?.album } })),
+    }))
+    this.creditsStatus = { running: true, completed: 0, total: selected.length, updated: 0, notFound: 0, failed: 0 }
+    this.creditsPromise = (async () => {
+      await Promise.resolve()
+      let consecutiveFailures = 0
+      try {
+        for (const album of selected) {
+          Object.assign(this.creditsStatus, { currentAlbum: album.title, trackCompleted: 0, trackTotal: album.tracks.length })
+          this.onChange()
+          let result
+          try {
+            result = await this.creditsProvider.lookup(album, { force, onProgress: ({ completed, total }) => {
+              this.creditsStatus.trackCompleted = completed
+              this.creditsStatus.trackTotal = total
+              this.onChange()
+            } })
+          } catch (error) { result = { status: 'error', error: error.message, retryAt: error.retryAt } }
+          if (!['matched', 'partial', 'not-found', 'uncertain', 'error'].includes(result?.status)) result = { status: 'error', error: '制作资料来源返回无效状态' }
+          const current = this.index.albums.find((entry) => entry.id === album.id && this.config.roots.includes(entry._root))
+          let before, outcome
+          if (current && creditsIdentity(current) === album.identity) {
+            before = { producers: current.producers, lookup: current.creditsLookup }
+            const tracksById = new Map(current.tracks.map((track) => [track.id, track]))
+            const credits = (Array.isArray(result.credits) ? result.credits : []).filter((person) => tracksById.has(person.trackId) && text(person.name) && text(person.role)).map((person) => ({
+              name: text(person.name), role: text(person.role), source: 'QQ Music', trackId: person.trackId,
+              trackTitle: tracksById.get(person.trackId).title,
+              ...(typeof person.url === 'string' && /^https:\/\/y\.qq\.com\/n\/ryqq\/songDetail\/[A-Za-z0-9]+$/.test(person.url) ? { url: person.url } : {}),
+            }))
+            current.creditsLookup = {
+              source: 'QQ Music', status: result.status, checkedAt: result.checkedAt ?? timestamp(),
+              matchedTracks: Math.max(0, Math.min(album.tracks.length, Number(result.matchedTracks) || 0)), totalTracks: album.tracks.length,
+              ...(result.error ? { error: result.error } : {}), ...(result.retryAt ? { retryAt: result.retryAt } : {}),
+            }
+            if (credits.length) {
+              // A partial/network failure must not erase previously known credits.
+              const refreshedTracks = new Set(credits.map((person) => person.trackId))
+              current.producers = uniqueProducers([
+                ...(current.producers ?? []).filter((person) => person.source !== 'QQ Music' || (result.status !== 'matched' && !refreshedTracks.has(person.trackId))),
+                ...credits,
+              ])
+              outcome = 'updated'
+            } else if (result.status === 'matched') {
+              current.creditsLookup.status = 'not-found'
+              outcome = 'notFound'
+            } else if (result.status === 'error') outcome = 'failed'
+            else outcome = 'notFound'
+          }
+          this.creditsStatus.completed += 1
+          if (result.error) this.creditsStatus.error = result.error
+          consecutiveFailures = result.status === 'error' ? consecutiveFailures + 1 : 0
+          try { await this.saveIndex() }
+          catch (error) {
+            if (before) {
+              current.producers = before.producers
+              current.creditsLookup = { ...before.lookup, source: 'QQ Music', status: 'error', checkedAt: timestamp(), error: `本地制作信息缓存写入失败：${error.message}` }
+              this.creditsStatus.failed += 1
+            }
+            throw error
+          }
+          if (outcome) this.creditsStatus[outcome] += 1
+          this.onChange()
+          if (Date.parse(result.retryAt) > Date.now() || consecutiveFailures >= 3) {
+            const remaining = selected.length - this.creditsStatus.completed
+            this.creditsStatus.error = `${result.error || '资料来源暂时不可用'}${remaining ? `；剩余 ${remaining} 张已暂停，已有资料保留。` : ''}`
+            break
+          }
+        }
+      } catch (error) { this.creditsStatus.error = `制作信息更新未完成：${error.message}` }
+      finally {
+        this.creditsStatus.running = false
+        delete this.creditsStatus.currentAlbum
+        delete this.creditsStatus.trackCompleted
+        delete this.creditsStatus.trackTotal
+        this.creditsPromise = null
+        this.onChange()
+      }
+      return this.snapshot()
+    })()
+    return this.creditsPromise
   }
 
   async updateIntroductions({ albumIds, force = false } = {}) {
@@ -612,7 +717,7 @@ export class MusicLibraryStore {
 function uniqueProducers(producers) {
   const seen = new Set()
   return producers.filter((producer) => {
-    const key = `${producer.name}:${producer.role}:${producer.trackTitle ?? ''}:${producer.source}`
+    const key = JSON.stringify([producer.name, producer.role, producer.trackId ?? producer.trackTitle ?? '', producer.source])
     if (seen.has(key)) return false
     seen.add(key)
     return true

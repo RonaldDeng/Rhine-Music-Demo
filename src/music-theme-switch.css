@@ -17,7 +17,7 @@
   border-radius: 16px;
   background: var(--ink);
   transform: translateX(0);
-  transition: transform 380ms cubic-bezier(0.22, 1, 0.36, 1);
+  transition: transform calc(380ms * var(--music-motion-scale, 1)) cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .music-app[data-theme="night"] .theme-switch::before {
@@ -29,7 +29,7 @@
   z-index: 1;
   flex: 1 0 auto;
   justify-content: center;
-  transition: color 260ms ease, opacity 260ms ease;
+  transition: color calc(260ms * var(--music-motion-scale, 1)) ease, opacity calc(260ms * var(--music-motion-scale, 1)) ease;
 }
 
 .music-app .theme-switch button[aria-pressed="true"] {

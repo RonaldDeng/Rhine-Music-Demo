@@ -27,11 +27,11 @@
   transform: scaleY(.2);
   pointer-events: none;
   transition:
-    width 560ms cubic-bezier(.22,.65,.28,1),
-    margin-left 560ms cubic-bezier(.22,.65,.28,1),
-    transform 560ms cubic-bezier(.22,.65,.28,1),
-    opacity 360ms ease;
-  transition-delay: var(--tick-delay, 0ms);
+    width calc(560ms * var(--music-motion-scale, 1)) cubic-bezier(.22,.65,.28,1),
+    margin-left calc(560ms * var(--music-motion-scale, 1)) cubic-bezier(.22,.65,.28,1),
+    transform calc(560ms * var(--music-motion-scale, 1)) cubic-bezier(.22,.65,.28,1),
+    opacity calc(360ms * var(--music-motion-scale, 1)) ease;
+  transition-delay: calc(var(--tick-delay, 0ms) * var(--music-motion-scale, 1));
 }
 
 #album-ticks.music-ticks > button[data-visible="true"] {
@@ -67,7 +67,7 @@
   background: var(--ink);
   opacity: .28;
   pointer-events: none;
-  transition: height 320ms ease, background-color 320ms ease, opacity 320ms ease;
+  transition: height calc(320ms * var(--music-motion-scale, 1)) ease, background-color calc(320ms * var(--music-motion-scale, 1)) ease, opacity calc(320ms * var(--music-motion-scale, 1)) ease;
 }
 
 #album-ticks.music-ticks > button:not(.active):is(:hover, :focus-visible) .music-tick-mark {
@@ -93,7 +93,7 @@
   opacity: 0;
   pointer-events: none;
   z-index: 1;
-  transition: transform 560ms cubic-bezier(.2,.7,.2,1), opacity 240ms ease;
+  transition: transform calc(560ms * var(--music-motion-scale, 1)) cubic-bezier(.2,.7,.2,1), opacity calc(240ms * var(--music-motion-scale, 1)) ease;
 }
 
 #album-ticks.music-ticks .music-tick-indicator[data-visible="true"] {

@@ -5,11 +5,27 @@ import ts from 'typescript';
 
 // Run the production controller without a DOM/WebGL dependency. Transpilation
 // also supports its TypeScript parameter properties on Node's strip-only builds.
-const source = await readFile(new URL('../src/music-presentation.ts', import.meta.url), 'utf8');
-const { outputText } = ts.transpileModule(source, {
-  compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext },
-});
-const { MusicPresentation } = await import(`data:text/javascript;base64,${Buffer.from(outputText).toString('base64')}`);
+const moduleUrls = new Map();
+async function transpiledModuleUrl(url) {
+  if (moduleUrls.has(url.href)) return moduleUrls.get(url.href);
+  const source = await readFile(url, 'utf8');
+  let { outputText } = ts.transpileModule(source, {
+    compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext },
+  });
+  // A data URL has no base for relative imports. Compile local dependencies
+  // recursively and share each URL so singleton settings keep one state.
+  const imports = [...outputText.matchAll(/from\s+["'](\.[^"']+)["']/g)];
+  for (const [, specifier] of imports) {
+    const path = specifier.endsWith('.ts') ? specifier : `${specifier}.ts`;
+    const dependency = await transpiledModuleUrl(new URL(path, url));
+    outputText = outputText.replaceAll(`"${specifier}"`, JSON.stringify(dependency))
+      .replaceAll(`'${specifier}'`, JSON.stringify(dependency));
+  }
+  const result = `data:text/javascript;base64,${Buffer.from(outputText).toString('base64')}`;
+  moduleUrls.set(url.href, result);
+  return result;
+}
+const { MusicPresentation } = await import(await transpiledModuleUrl(new URL('../src/music-presentation.ts', import.meta.url)));
 
 function fixture({ reduced = false } = {}) {
   const events = [];
@@ -78,6 +94,7 @@ test('menu waits for both browse exit and completed elevated camera presentation
   const f = fixture();
   f.motion.open();
   assert.equal(f.motion.phase, 'opening');
+  assert.ok(!f.events.includes('camera:enter'), 'Text must finish retiring before the physical extraction');
   assert.equal(f.events.filter((event) => event === 'menu:show').length, 0);
   // A camera readiness signal by itself may not expose an overlapping menu.
   f.ready.presentation = true;
@@ -85,6 +102,7 @@ test('menu waits for both browse exit and completed elevated camera presentation
   assert.equal(f.motion.phase, 'opening');
   f.ready.presentation = false;
   f.finishBrowse();
+  assert.equal(f.events.at(-1), 'camera:enter');
   for (let frame = 0; frame < 120; frame++) f.motion.update();
   assert.equal(f.motion.phase, 'opening', 'Elapsed frames cannot replace camera readiness');
   assert.ok(!f.events.includes('menu:show'));
@@ -122,7 +140,7 @@ test('detail switch waits for menu exit and new presentation without returning t
 for (const startingPhase of ['detail', 'opening', 'switch-hiding', 'switching']) {
   test(`search from ${startingPhase} returns to the archive, settles its selection, then reopens`, () => {
     const f = fixture();
-    if (startingPhase === 'opening') f.motion.open();
+    if (startingPhase === 'opening') { f.motion.open(); f.finishBrowse(); }
     else f.openDetail();
     if (startingPhase === 'switch-hiding' || startingPhase === 'switching') {
       f.motion.select({ index: 1 }, true);
@@ -132,7 +150,6 @@ for (const startingPhase of ['detail', 'opening', 'switch-hiding', 'switching'])
     const target = { index: 8, route: 'archive' };
     f.motion.select(target, true);
     assert.equal(f.menuExits.length, 1, 'Reuse an existing text exit rather than starting a second one');
-    if (startingPhase === 'opening') f.finishBrowse(); // Obsolete first-opening callback.
     f.ready.presentation = true;
     f.motion.update();
     assert.deepEqual(f.detailSelections(), [], 'Search must not use the accelerated detail rail');
@@ -152,8 +169,9 @@ for (const startingPhase of ['detail', 'opening', 'switch-hiding', 'switching'])
     f.ready.archive = true;
     f.motion.update();
     assert.equal(f.motion.phase, 'opening');
-    assert.equal(f.events.filter((event) => event === 'camera:enter').length, 1);
+    assert.equal(f.events.filter((event) => event === 'camera:enter').length, 0);
     f.finishBrowse();
+    assert.equal(f.events.filter((event) => event === 'camera:enter').length, 1);
     f.ready.presentation = true;
     f.motion.update();
     assert.equal(f.motion.phase, 'detail');
@@ -185,6 +203,7 @@ test('search replacements during exit, return and row movement preserve the late
   f.motion.update();
   assert.equal(f.motion.phase, 'opening');
   assert.equal(f.events.filter((event) => event === 'camera:return').length, 1);
+  f.finishBrowse();
   assert.equal(f.events.filter((event) => event === 'camera:enter').length, 1);
 });
 
@@ -320,8 +339,43 @@ test('skip/replay handoff cannot use an old browse exit to reveal the new menu',
   assert.equal(f.motion.phase, 'opening');
   assert.ok(!f.events.includes('menu:show'));
   f.finishBrowse();
+  f.ready.presentation = true;
   f.motion.update();
   assert.equal(f.motion.phase, 'detail');
+});
+
+test('latest selection during browse retirement settles its rail before extracting', () => {
+  const f = fixture();
+  f.motion.open();
+  f.motion.select({ index: 2 }, true);
+  f.motion.select({ index: 7, navigation: { axis: 'lane', direction: -1 } }, true);
+  assert.deepEqual(f.selections(), []);
+  assert.deepEqual(f.detailSelections(), []);
+  f.finishBrowse();
+  assert.equal(f.motion.phase, 'selecting');
+  assert.equal(f.selections().at(-1).index, 7);
+  assert.ok(!f.events.includes('camera:enter'));
+  f.motion.update();
+  assert.equal(f.motion.phase, 'selecting');
+  f.ready.archive = true;
+  f.motion.update();
+  f.finishBrowse();
+  assert.equal(f.events.filter(event => event === 'camera:enter').length, 1);
+  f.ready.presentation = true;
+  f.motion.update();
+  assert.equal(f.motion.phase, 'detail');
+});
+
+test('back before extraction invalidates the pending browse callback', () => {
+  const f = fixture();
+  f.motion.open();
+  f.motion.back();
+  f.finishBrowse();
+  assert.ok(!f.events.includes('camera:enter'));
+  f.finishMenu();
+  f.ready.archive = true;
+  f.motion.update();
+  assert.equal(f.motion.phase, 'archive');
 });
 
 test('interrupted opening ignores stale callbacks and honours a later open request', () => {
@@ -375,11 +429,8 @@ test('enabling reduced motion during an exit can finish existing callbacks safel
   assert.equal(f.events.at(-1), 'browse:show');
 });
 
-const transitionSource = await readFile(new URL('../src/ui-transitions.ts', import.meta.url), 'utf8');
-const transitionModule = ts.transpileModule(transitionSource, {
-  compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext },
-}).outputText;
-const { SurfaceTransition } = await import(`data:text/javascript;base64,${Buffer.from(transitionModule).toString('base64')}`);
+const { SurfaceTransition } = await import(await transpiledModuleUrl(new URL('../src/ui-transitions.ts', import.meta.url)));
+const { setMusicMotionSpeed } = await import(await transpiledModuleUrl(new URL('../src/music-motion-settings.ts', import.meta.url)));
 
 function animationElement(hidden = false) {
   const element = { hidden, dataset: {}, opacity: '1', transform: 'none', animations: [] };
@@ -387,7 +438,8 @@ function animationElement(hidden = false) {
     let resolve, reject, finished;
     let settled = false, cancelled = false;
     const animation = {
-      frames, options,
+      frames, options, playbackRate: 1,
+      updatePlaybackRate(rate) { this.playbackRate = rate; },
       get finished() {
         // Native Animation.finished is only observed when its getter is used.
         return finished ??= new Promise((done, fail) => {
@@ -459,4 +511,64 @@ test('production transition cancellation cannot complete an obsolete exit', asyn
   transition.hide(true, () => { reducedCalls++; });
   assert.equal(reducedCalls, 1, 'Reduced motion completes synchronously');
   assert.equal(root.hidden, true);
+});
+
+test('music speed retimes an active surface and leaves reduced motion immediate', async (t) => {
+  const originalComputedStyle = globalThis.getComputedStyle;
+  globalThis.getComputedStyle = (element) => element;
+  t.after(() => {
+    setMusicMotionSpeed(1);
+    globalThis.getComputedStyle = originalComputedStyle;
+  });
+  setMusicMotionSpeed(0.25);
+  const root = animationElement(true), article = animationElement();
+  const transition = new SurfaceTransition(root, article, 360, 240, 'right');
+  transition.show(false);
+  const opening = root.animations.at(-1);
+  assert.equal(opening.options.duration, 360, 'Keep base time so in-flight progress stays continuous');
+  assert.equal(opening.playbackRate, 0.25);
+  opening.currentTime = 90;
+  setMusicMotionSpeed(3);
+  assert.equal(opening.playbackRate, 3);
+  assert.equal(opening.currentTime, 90, 'Changing speed does not restart the surface');
+  let completed = 0;
+  transition.hide(false, () => completed++);
+  assert.equal(root.animations.at(-1).playbackRate, 3, 'A later transition uses current speed');
+  transition.finish();
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.equal(completed, 1);
+  assert.equal(root.hidden, true);
+  const completedRate = root.animations.at(-1).playbackRate;
+  setMusicMotionSpeed(0.5);
+  assert.equal(root.animations.at(-1).playbackRate, completedRate, 'Completed animation releases its speed listener');
+  transition.show(true);
+  assert.equal(root.hidden, false);
+  assert.equal(root.dataset.transition, 'open');
+  transition.dispose();
+});
+
+test('near-end reversal resumes at the painted position and finishes in the remaining distance', async (t) => {
+  const originalComputedStyle = globalThis.getComputedStyle;
+  globalThis.getComputedStyle = (element) => element;
+  t.after(() => { globalThis.getComputedStyle = originalComputedStyle; });
+  const root = animationElement(), article = animationElement();
+  const transition = new SurfaceTransition(root, article, 360, 240, 'right');
+  let staleExit = 0;
+  transition.hide(false, () => staleExit++);
+  // Reverse almost immediately: only 4% opacity and 2 px have departed.
+  root.opacity = '0.96';
+  article.transform = 'matrix(1, 0, 0, 1, 2, 0)';
+  transition.show(false);
+  const fade = root.animations.at(-1), move = article.animations.at(-1);
+  assert.equal(fade.frames[0].opacity, '0.96');
+  assert.equal(move.frames[0].transform, article.transform);
+  assert.ok(fade.options.duration >= 72 && fade.options.duration < 100,
+    'A tiny reversal must not restart a full 360 ms entrance');
+  assert.equal(move.options.duration, fade.options.duration);
+  transition.finish();
+  await Promise.resolve(); await Promise.resolve();
+  assert.equal(staleExit, 0);
+  assert.equal(root.dataset.transition, 'open');
+  transition.dispose();
 });

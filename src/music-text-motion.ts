@@ -3,6 +3,8 @@ import {
   createRollingText,
 } from "@kitlangton/rolling-number";
 import type { ArchiveNavigation } from "./archive-loop";
+import { musicMotionDuration } from "./music-motion-settings";
+import { followRollingMotionSpeed } from "./music-motion-ui";
 
 type SelectionText = {
   number: number;
@@ -19,13 +21,15 @@ type SelectionText = {
 
 /** Keep the original archive's per-glyph reels alive across selection changes. */
 export function setupMusicTextMotion(root: HTMLElement) {
+  const reelHosts: HTMLElement[] = [];
   const host = (id: string, kind: "text" | "number") => {
     const element = root.querySelector<HTMLElement>(`#${id}`)!;
     element.classList.add(`music-rolling-${kind}`);
+    reelHosts.push(element);
     return element;
   };
   const motion = {
-    duration: 460,
+    duration: musicMotionDuration(460),
     motionBlur: false,
     animated: false,
     // Hidden browse text is prepared before the camera finishes its return.
@@ -67,6 +71,7 @@ export function setupMusicTextMotion(root: HTMLElement) {
     const plain = document.createElement("span");
     const measure = document.createElement("span");
     reel.className = "music-rolling-text music-inline-reel";
+    reelHosts.push(reel);
     plain.className = "music-inline-plain";
     plain.style.display = "none";
     plain.style.whiteSpace = "normal";
@@ -119,7 +124,8 @@ export function setupMusicTextMotion(root: HTMLElement) {
     document.fonts.addEventListener("loadingdone", schedule);
     void document.fonts.ready.then(schedule);
     return {
-      update(options: { text?: string; animated?: boolean }) {
+      update(options: { text?: string; animated?: boolean; duration?: number }) {
+        if (options.duration !== undefined) controller.update({ duration: options.duration });
         let changedText = false;
         if (options.text !== undefined && options.text !== value) {
           changedText = true;
@@ -165,6 +171,10 @@ export function setupMusicTextMotion(root: HTMLElement) {
     meta: wrappingText("selection-meta"),
   };
   const controllers = [...Object.values(numbers), ...Object.values(texts)];
+  const unsubscribeSpeed = followRollingMotionSpeed(reelHosts, () => {
+    const duration = musicMotionDuration(460);
+    controllers.forEach((controller) => controller.update({ duration }));
+  });
   let enabled = false;
   const setEnabled = (next: boolean) => {
     if (enabled === next) return;
@@ -213,6 +223,7 @@ export function setupMusicTextMotion(root: HTMLElement) {
       setEnabled(false);
     },
     destroy() {
+      unsubscribeSpeed();
       cancelAnimationFrame(wrappingFrame);
       pendingWraps.clear();
       controllers.forEach((controller) => controller.destroy());

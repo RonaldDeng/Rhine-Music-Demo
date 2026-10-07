@@ -1,0 +1,680 @@
+[
+  {
+    "viewport": 1280,
+    "pass": true,
+    "results": [
+      {
+        "title": "Fix You (Live)",
+        "reduced": false,
+        "font": "12px",
+        "displayed": "Fix You (Live)",
+        "available": 73.515625,
+        "width": 73.515625,
+        "full": true,
+        "pass": true
+      },
+      {
+        "title": "Yellow",
+        "reduced": false,
+        "font": "12px",
+        "displayed": "Yellow",
+        "available": 36.375,
+        "width": 36.375,
+        "full": true,
+        "pass": true
+      },
+      {
+        "title": "Viva La Vida (Live)",
+        "reduced": false,
+        "font": "12px",
+        "displayed": "Viva La Vida (Live)",
+        "available": 101.5703125,
+        "width": 101.5703125,
+        "full": true,
+        "pass": true
+      },
+      {
+        "title": "The Scientist [Live]",
+        "reduced": false,
+        "font": "12px",
+        "displayed": "The Scientist [Live]",
+        "available": 105.703125,
+        "width": 105.703125,
+        "full": true,
+        "pass": true
+      },
+      {
+        "title": "A Very Long Album Song Name (Live at the Royal Albert Hall)",
+        "reduced": false,
+        "font": "12px",
+        "displayed": "A Very Long Album Song Name (Live …",
+        "available": 222,
+        "width": 219.6953125,
+        "full": false,
+        "pass": true
+      },
+      {
+        "title": "中文歌名（现场版）",
+        "reduced": false,
+        "font": "12px",
+        "displayed": "中文歌名（现场版）",
+        "available": 108,
+        "width": 108,
+        "full": true,
+        "pass": true
+      },
+      {
+        "title": "office affine (final)",
+        "reduced": false,
+        "font": "12px",
+        "displayed": "office affine (final)",
+        "available": 99.8828125,
+        "width": 99.8828125,
+        "full": true,
+        "pass": true
+      },
+      {
+        "title": "AVATAR (To) [Ty]",
+        "reduced": false,
+        "font": "12px",
+        "displayed": "AVATAR (To) [Ty]",
+        "available": 97.1953125,
+        "width": 97.1953125,
+        "full": true,
+        "pass": true
+      },
+      {
+        "title": "fj (Live)",
+        "reduced": false,
+        "font": "12px",
+        "displayed": "fj (Live)",
+        "available": 40.3515625,
+        "width": 40.3515625,
+        "full": true,
+        "pass": true
+      },
+      {
+        "title": "Café á (Live)",
+        "reduced": false,
+        "font": "12px",
+        "displayed": "Café á (Live)",
+        "available": 68.71875,
+        "width": 68.71875,
+        "full": true,
+        "pass": true
+      },
+      {
+        "title": "Test 👩‍🚀 (Live)",
+        "reduced": false,
+        "font": "12px",
+        "displayed": "Test 👩‍🚀 (Live)",
+        "available": 72.578125,
+        "width": 72.578125,
+        "full": true,
+        "pass": true
+      },
+      {
+        "title": "Fix You (Live)",
+        "reduced": true,
+        "font": "12px",
+        "displayed": "Fix You (Live)",
+        "available": 73.515625,
+        "width": 72.1484375,
+        "full": true,
+        "pass": true
+      },
+      {
+        "title": "Yellow",
+        "reduced": true,
+        "font": "12px",
+        "displayed": "Yellow",
+        "available": 36.375,
+        "width": 34.8671875,
+        "full": true,
+        "pass": true
+      },
+      {
+        "title": "Viva La Vida (Live)",
+        "reduced": true,
+        "font": "12px",
+        "displayed": "Viva La Vida (Live)",
+        "available": 101.5703125,
+        "width": 100.9609375,
+        "full": true,
+        "pass": true
+      },
+      {
+        "title": "The Scientist [Live]",
+        "reduced": true,
+        "font": "12px",
+        "displayed": "The Scientist [Live]",
+        "available": 105.703125,
+        "width": 104.6171875,
+        "full": true,
+        "pass": true
+      },
+      {
+        "title": "A Very Long Album Song Name (Live at the Royal Albert Hall)",
+        "reduced": true,
+        "font": "12px",
+        "displayed": "A Very Long Album Song Name (Live …",
+        "available": 222,
+        "width": 218.484375,
+        "full": false,
+        "pass": true
+      },
+      {
+        "title": "中文歌名（现场版）",
+        "reduced": true,
+        "font": "12px",
+        "displayed": "中文歌名（现场版）",
+        "available": 108,
+        "width": 108,
+        "full": true,
+        "pass": true
+      },
+      {
+        "title": "office affine (final)",
+        "reduced": true,
+        "font": "12px",
+        "displayed": "office affine (final)",
+        "available": 99.8828125,
+        "width": 99.6875,
+        "full": true,
+        "pass": true
+      },
+      {
+        "title": "AVATAR (To) [Ty]",
+        "reduced": true,
+        "font": "12px",
+        "displayed": "AVATAR (To) [Ty]",
+        "available": 97.1953125,
+        "width": 90.6796875,
+        "full": true,
+        "pass": true
+      },
+      {
+        "title": "fj (Live)",
+        "reduced": true,
+        "font": "12px",
+        "displayed": "fj (Live)",
+        "available": 40.3515625,
+        "width": 40.265625,
+        "full": true,
+        "pass": true
+      },
+      {
+        "title": "Café á (Live)",
+        "reduced": true,
+        "font": "12px",
+        "displayed": "Café á (Live)",
+        "available": 68.71875,
+        "width": 68.28125,
+        "full": true,
+        "pass": true
+      },
+      {
+        "title": "Test 👩‍🚀 (Live)",
+        "reduced": true,
+        "font": "12px",
+        "displayed": "Test 👩‍🚀 (Live)",
+        "available": 72.578125,
+        "width": 70.921875,
+        "full": true,
+        "pass": true
+      }
+    ]
+  },
+  {
+    "viewport": 1000,
+    "pass": true,
+    "results": [
+      {
+        "title": "Fix You (Live)",
+        "reduced": false,
+        "font": "11px",
+        "displayed": "Fix You (Live)",
+        "available": 67.40625,
+        "width": 67.40625,
+        "full": true,
+        "pass": true
+      },
+      {
+        "title": "Yellow",
+        "reduced": false,
+        "font": "11px",
+        "displayed": "Yellow",
+        "available": 33.3515625,
+        "width": 33.3515625,
+        "full": true,
+        "pass": true
+      },
+      {
+        "title": "Viva La Vida (Live)",
+        "reduced": false,
+        "font": "11px",
+        "displayed": "Viva La Vida (Live)",
+        "available": 93.140625,
+        "width": 93.140625,
+        "full": true,
+        "pass": true
+      },
+      {
+        "title": "The Scientist [Live]",
+        "reduced": false,
+        "font": "11px",
+        "displayed": "The Scientist [Live]",
+        "available": 96.90625,
+        "width": 96.90625,
+        "full": true,
+        "pass": true
+      },
+      {
+        "title": "A Very Long Album Song Name (Live at the Royal Albert Hall)",
+        "reduced": false,
+        "font": "11px",
+        "displayed": "A Very Long Album Song Na…",
+        "available": 162,
+        "width": 155.328125,
+        "full": false,
+        "pass": true
+      },
+      {
+        "title": "中文歌名（现场版）",
+        "reduced": false,
+        "font": "11px",
+        "displayed": "中文歌名（现场版）",
+        "available": 99,
+        "width": 99,
+        "full": true,
+        "pass": true
+      },
+      {
+        "title": "office affine (final)",
+        "reduced": false,
+        "font": "11px",
+        "displayed": "office affine (final)",
+        "available": 91.5703125,
+        "width": 91.5703125,
+        "full": true,
+        "pass": true
+      },
+      {
+        "title": "AVATAR (To) [Ty]",
+        "reduced": false,
+        "font": "11px",
+        "displayed": "AVATAR (To) [Ty]",
+        "available": 89.125,
+        "width": 89.125,
+        "full": true,
+        "pass": true
+      },
+      {
+        "title": "fj (Live)",
+        "reduced": false,
+        "font": "11px",
+        "displayed": "fj (Live)",
+        "available": 37.0078125,
+        "width": 37.0078125,
+        "full": true,
+        "pass": true
+      },
+      {
+        "title": "Café á (Live)",
+        "reduced": false,
+        "font": "11px",
+        "displayed": "Café á (Live)",
+        "available": 63.0234375,
+        "width": 63.0234375,
+        "full": true,
+        "pass": true
+      },
+      {
+        "title": "Test 👩‍🚀 (Live)",
+        "reduced": false,
+        "font": "11px",
+        "displayed": "Test 👩‍🚀 (Live)",
+        "available": 67.0546875,
+        "width": 67.0546875,
+        "full": true,
+        "pass": true
+      },
+      {
+        "title": "Fix You (Live)",
+        "reduced": true,
+        "font": "11px",
+        "displayed": "Fix You (Live)",
+        "available": 67.40625,
+        "width": 66.1328125,
+        "full": true,
+        "pass": true
+      },
+      {
+        "title": "Yellow",
+        "reduced": true,
+        "font": "11px",
+        "displayed": "Yellow",
+        "available": 33.3515625,
+        "width": 31.9609375,
+        "full": true,
+        "pass": true
+      },
+      {
+        "title": "Viva La Vida (Live)",
+        "reduced": true,
+        "font": "11px",
+        "displayed": "Viva La Vida (Live)",
+        "available": 93.140625,
+        "width": 92.546875,
+        "full": true,
+        "pass": true
+      },
+      {
+        "title": "The Scientist [Live]",
+        "reduced": true,
+        "font": "11px",
+        "displayed": "The Scientist [Live]",
+        "available": 96.90625,
+        "width": 95.8984375,
+        "full": true,
+        "pass": true
+      },
+      {
+        "title": "A Very Long Album Song Name (Live at the Royal Albert Hall)",
+        "reduced": true,
+        "font": "11px",
+        "displayed": "A Very Long Album Song Na…",
+        "available": 162,
+        "width": 154.2578125,
+        "full": false,
+        "pass": true
+      },
+      {
+        "title": "中文歌名（现场版）",
+        "reduced": true,
+        "font": "11px",
+        "displayed": "中文歌名（现场版）",
+        "available": 99,
+        "width": 99,
+        "full": true,
+        "pass": true
+      },
+      {
+        "title": "office affine (final)",
+        "reduced": true,
+        "font": "11px",
+        "displayed": "office affine (final)",
+        "available": 91.5703125,
+        "width": 91.3828125,
+        "full": true,
+        "pass": true
+      },
+      {
+        "title": "AVATAR (To) [Ty]",
+        "reduced": true,
+        "font": "11px",
+        "displayed": "AVATAR (To) [Ty]",
+        "available": 89.125,
+        "width": 83.1171875,
+        "full": true,
+        "pass": true
+      },
+      {
+        "title": "fj (Live)",
+        "reduced": true,
+        "font": "11px",
+        "displayed": "fj (Live)",
+        "available": 37.0078125,
+        "width": 36.90625,
+        "full": true,
+        "pass": true
+      },
+      {
+        "title": "Café á (Live)",
+        "reduced": true,
+        "font": "11px",
+        "displayed": "Café á (Live)",
+        "available": 63.0234375,
+        "width": 62.59375,
+        "full": true,
+        "pass": true
+      },
+      {
+        "title": "Test 👩‍🚀 (Live)",
+        "reduced": true,
+        "font": "11px",
+        "displayed": "Test 👩‍🚀 (Live)",
+        "available": 67.0546875,
+        "width": 65.515625,
+        "full": true,
+        "pass": true
+      }
+    ]
+  },
+  {
+    "viewport": 390,
+    "pass": true,
+    "results": [
+      {
+        "title": "Fix You (Live)",
+        "reduced": false,
+        "font": "10px",
+        "displayed": "Fix Y…",
+        "available": 32,
+        "width": 32,
+        "full": false,
+        "pass": true
+      },
+      {
+        "title": "Yellow",
+        "reduced": false,
+        "font": "10px",
+        "displayed": "Yellow",
+        "available": 30.328125,
+        "width": 30.328125,
+        "full": true,
+        "pass": true
+      },
+      {
+        "title": "Viva La Vida (Live)",
+        "reduced": false,
+        "font": "10px",
+        "displayed": "Viva…",
+        "available": 32,
+        "width": 29.5859375,
+        "full": false,
+        "pass": true
+      },
+      {
+        "title": "The Scientist [Live]",
+        "reduced": false,
+        "font": "10px",
+        "displayed": "The …",
+        "available": 32,
+        "width": 30.28125,
+        "full": false,
+        "pass": true
+      },
+      {
+        "title": "A Very Long Album Song Name (Live at the Royal Albert Hall)",
+        "reduced": false,
+        "font": "10px",
+        "displayed": "A Ve…",
+        "available": 32,
+        "width": 31.796875,
+        "full": false,
+        "pass": true
+      },
+      {
+        "title": "中文歌名（现场版）",
+        "reduced": false,
+        "font": "10px",
+        "displayed": "中文…",
+        "available": 32,
+        "width": 30,
+        "full": false,
+        "pass": true
+      },
+      {
+        "title": "office affine (final)",
+        "reduced": false,
+        "font": "10px",
+        "displayed": "offic…",
+        "available": 32,
+        "width": 30.21875,
+        "full": false,
+        "pass": true
+      },
+      {
+        "title": "AVATAR (To) [Ty]",
+        "reduced": false,
+        "font": "10px",
+        "displayed": "AVA…",
+        "available": 32,
+        "width": 30.03125,
+        "full": false,
+        "pass": true
+      },
+      {
+        "title": "fj (Live)",
+        "reduced": false,
+        "font": "10px",
+        "displayed": "fj (Li…",
+        "available": 32,
+        "width": 29.9609375,
+        "full": false,
+        "pass": true
+      },
+      {
+        "title": "Café á (Live)",
+        "reduced": false,
+        "font": "10px",
+        "displayed": "Café…",
+        "available": 32,
+        "width": 31.2421875,
+        "full": false,
+        "pass": true
+      },
+      {
+        "title": "Test 👩‍🚀 (Live)",
+        "reduced": false,
+        "font": "10px",
+        "displayed": "Test…",
+        "available": 32,
+        "width": 29.828125,
+        "full": false,
+        "pass": true
+      },
+      {
+        "title": "Fix You (Live)",
+        "reduced": true,
+        "font": "10px",
+        "displayed": "Fix Y…",
+        "available": 32,
+        "width": 31.984375,
+        "full": false,
+        "pass": true
+      },
+      {
+        "title": "Yellow",
+        "reduced": true,
+        "font": "10px",
+        "displayed": "Yellow",
+        "available": 30.328125,
+        "width": 29.0546875,
+        "full": true,
+        "pass": true
+      },
+      {
+        "title": "Viva La Vida (Live)",
+        "reduced": true,
+        "font": "10px",
+        "displayed": "Viva…",
+        "available": 32,
+        "width": 29.3203125,
+        "full": false,
+        "pass": true
+      },
+      {
+        "title": "The Scientist [Live]",
+        "reduced": true,
+        "font": "10px",
+        "displayed": "The …",
+        "available": 32,
+        "width": 29.5625,
+        "full": false,
+        "pass": true
+      },
+      {
+        "title": "A Very Long Album Song Name (Live at the Royal Albert Hall)",
+        "reduced": true,
+        "font": "10px",
+        "displayed": "A Ve…",
+        "available": 32,
+        "width": 31.03125,
+        "full": false,
+        "pass": true
+      },
+      {
+        "title": "中文歌名（现场版）",
+        "reduced": true,
+        "font": "10px",
+        "displayed": "中文…",
+        "available": 32,
+        "width": 30,
+        "full": false,
+        "pass": true
+      },
+      {
+        "title": "office affine (final)",
+        "reduced": true,
+        "font": "10px",
+        "displayed": "offic…",
+        "available": 32,
+        "width": 30.203125,
+        "full": false,
+        "pass": true
+      },
+      {
+        "title": "AVATAR (To) [Ty]",
+        "reduced": true,
+        "font": "10px",
+        "displayed": "AVA…",
+        "available": 32,
+        "width": 28.5234375,
+        "full": false,
+        "pass": true
+      },
+      {
+        "title": "fj (Live)",
+        "reduced": true,
+        "font": "10px",
+        "displayed": "fj (Li…",
+        "available": 32,
+        "width": 29.9453125,
+        "full": false,
+        "pass": true
+      },
+      {
+        "title": "Café á (Live)",
+        "reduced": true,
+        "font": "10px",
+        "displayed": "Café…",
+        "available": 32,
+        "width": 30.9453125,
+        "full": false,
+        "pass": true
+      },
+      {
+        "title": "Test 👩‍🚀 (Live)",
+        "reduced": true,
+        "font": "10px",
+        "displayed": "Test…",
+        "available": 32,
+        "width": 28.515625,
+        "full": false,
+        "pass": true
+      }
+    ]
+  }
+]

@@ -27,8 +27,13 @@ export function applyTextureQuality(
     }
   });
   for (const texture of textures) {
-    if (texture.anisotropy === maximum) continue;
-    texture.anisotropy = maximum;
+    // Atlas filtering must stay inside its own tile. Respect texture ownership
+    // instead of silently replacing the atlas's 1× guard with the global 16×.
+    const limit = texture.userData.maxAnisotropy;
+    const anisotropy = typeof limit === "number" && Number.isFinite(limit)
+      ? Math.min(maximum, Math.max(1, limit)) : maximum;
+    if (texture.anisotropy === anisotropy) continue;
+    texture.anisotropy = anisotropy;
     texture.needsUpdate = true;
   }
 }

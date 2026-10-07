@@ -5,6 +5,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { COLUMN_SPACING, ROW_SPACING, LOOP_COLUMNS, LOOP_ROWS, visibleCell } from '../src/archive-loop.ts';
 import { MUSIC_MODEL, normalizeMusicGeometry, createAlbumPrintMaterial } from '../src/music-model.ts';
+import { MUSIC_CD_ASSET } from '../src/music-cd-asset.ts';
 
 // Resolve every production import, including the shared theme transition.
 // Both classes use parameter properties that require transpilation for Node.
@@ -45,7 +46,7 @@ assert.equal(a.column.x,-5.2,'Reduced motion snaps to the selected location');
 // Use the actual shell bounds and complete instance pool, including its hidden
 // margins. A source inside this volume can burn a corner even when the selected
 // CD itself has the desired exposure; checking only source-to-target misses it.
-const glb = fs.readFileSync(new URL('../public/assets/music-cd.glb', import.meta.url));
+const glb = fs.readFileSync(new URL(`../public/${MUSIC_CD_ASSET.split('?')[0]}`, import.meta.url));
 const asset = await new GLTFLoader().parseAsync(glb.buffer.slice(glb.byteOffset, glb.byteOffset + glb.byteLength), '');
 asset.scene.traverse(object => { if (object instanceof THREE.Mesh) normalizeMusicGeometry(object.geometry); });
 const shellBounds = new THREE.Box3().setFromObject(asset.scene);

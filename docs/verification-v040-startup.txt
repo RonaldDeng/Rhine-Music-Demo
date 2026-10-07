@@ -1,0 +1,484 @@
+
+> rhine-music-demo@0.4.0 check:v040
+> npm run check:music && npm run check:audio && npm run check:overview && npm run check:cover && npm run check:startup && npm run check:lighting && npm run check:interaction && npm run check:viewport && npm run check:content && npm run check:credits && node scripts/check-music-launcher.mjs
+
+
+> rhine-music-demo@0.4.0 check:music
+> node --test scripts/check-music-library.mjs scripts/check-album-introductions.mjs && node scripts/check-music-scene.mjs && node --experimental-strip-types --test scripts/check-music-player.mjs && node scripts/check-music-motion.mjs && node scripts/check-music-camera.mjs && node scripts/check-music-lighting.mjs && node scripts/check-music-presentation.mjs && node scripts/check-music-model.mjs
+
+✔ matching handles traditional/simplified and bilingual titles but rejects wrong artist, year and song pages (4.74775ms)
+✔ public provider needs no MusicBrainz contact and commits only the formal article extract with attribution (2.91025ms)
+✔ all sources failing yields error, never a cached not-found or fabricated success (0.749125ms)
+✔ two plausible articles remain uncertain, and a title with an empty extract is not reported absent (4.530667ms)
+✔ Wikipedia search discovers a candidate but its snippet is never used as the introduction (0.554541ms)
+✔ store caches successful introductions across restarts, preserves existing text on failure, and coalesces requests (12.334292ms)
+✔ batch stops after three consecutive source failures and leaves remaining albums for retry (15.581458ms)
+✔ a simultaneous scan retains a newly returned introduction and manual genres (5.347333ms)
+✔ real WAV parsing exposes duration, lossless technical metadata, and byte-accurate Range playback (47.797334ms)
+✔ incremental scan detects additions/removals, caches unchanged tags, and preserves a disconnected root (18.363458ms)
+✔ v3 metadata upgrades from the saved index without source reparsing and derives v4 playback fields (7.936875ms)
+✔ folder covers override embedded art; removing a cover reveals cached or newly extracted embedded art (4.580959ms)
+✔ manual genres survive rescans and online refresh; editing the rules needs no audio rewrite (3.763792ms)
+✔ DSD is indexed without promising browser playback, and overlapping scans coalesce (3.310625ms)
+✔ ambiguous online matches never assign guessed production credits or genres (3.560125ms)
+✔ album introductions follow matched release-group links, retain attribution, and never use local comments (3314.271125ms)
+✔ Range validation rejects malformed and multipart requests and clips an excessive end (0.401375ms)
+ℹ tests 17
+ℹ suites 0
+ℹ pass 17
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 3621.775292
+Music scene checks passed: 1/2/7 genres × 1/3/40 albums, bidirectional loops, empty library, uncropped image aspect ratios.
+✔ BGM has an independent default, live volume, zero-volume gate, and clamped settings (4.639042ms)
+✔ song playback waits for BGM silence despite rapid BGM volume and toggle changes (1.315167ms)
+✔ rapidly cancelling a pending song restores only the latest BGM volume (0.885375ms)
+✔ a late BGM play resolution stays silent when a song has taken over (0.26125ms)
+✔ CoreAudio transport retains paused position when switching backend, and auto-advances without BGM (0.894667ms)
+✔ local decode preparation cancellation never starts a late browser source (0.246167ms)
+✔ browser APE playback prepares PCM without probing or starting native capabilities (0.241334ms)
+✔ native playback survives visibility changes, but dispose sends one unload-safe stop (0.295ms)
+ℹ tests 8
+ℹ suites 0
+ℹ pass 8
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 147.271792
+Music motion passed: gentle first 200 ms, no early dip, unchanged final height, 30/120 Hz equivalence, small neighboring wave.
+Music camera passed: landscape headroom and framing boundaries, continuous motion, frame-rate independence, original-film oblique pause/frontal ending, shared entry/return gates, elevated detail, interruption, replay and reduced motion.
+Presentation pan: 0.252% at 0.2 s; 95% at 1.421 s (rendered camera, 240 Hz).
+Music lighting passed: actual 4.45×3.35 shell edge alignment, narrow warm ribbon, unchanged cover shader, gradual start, frame-rate independence, rapid reversal, reduced motion, lower-left direction, neighboring-column cone coverage, full-pool clearance 38.78, cinematic track/replay anchoring, empty-library disable.
+✔ menu waits for both browse exit and completed elevated camera presentation (1.120042ms)
+✔ detail switch waits for menu exit and new presentation without returning to the archive (0.977542ms)
+✔ search from detail returns to the archive, settles its selection, then reopens (0.200333ms)
+✔ search from opening returns to the archive, settles its selection, then reopens (0.08975ms)
+✔ search from switch-hiding returns to the archive, settles its selection, then reopens (0.087125ms)
+✔ search from switching returns to the archive, settles its selection, then reopens (0.102333ms)
+✔ search replacements during exit, return and row movement preserve the latest destination (0.115625ms)
+✔ back during search hiding cancels reopening (0.101ms)
+✔ back during search returning cancels reopening (0.062417ms)
+✔ back during search selecting cancels reopening (0.094375ms)
+✔ reduced-motion search preserves archive selection and reopen ordering (0.123ms)
+✔ rapid requests retain the latest selection and its navigation intent (0.267ms)
+✔ back during text exit cancels the pending detail switch and returns once (0.092042ms)
+✔ latest back during a committed rail movement settles into browsing (0.11ms)
+✔ replay/reset invalidates old menu-exit callbacks (0.079958ms)
+✔ skip/replay handoff cannot use an old browse exit to reveal the new menu (0.054ms)
+✔ latest selection during browse retirement settles its rail before extracting (0.075125ms)
+✔ back before extraction invalidates the pending browse callback (0.051958ms)
+✔ interrupted opening ignores stale callbacks and honours a later open request (0.054167ms)
+✔ reduced-motion synchronous callbacks preserve ordering and never deadlock (0.078875ms)
+✔ enabling reduced motion during an exit can finish existing callbacks safely (0.080084ms)
+✔ production menu transition moves right and fades before switching the detail album (0.827208ms)
+✔ production transition cancellation cannot complete an obsolete exit (0.206666ms)
+✔ music speed retimes an active surface and leaves reduced motion immediate (0.228708ms)
+✔ near-end reversal resumes at the painted position and finishes in the remaining distance (0.153041ms)
+ℹ tests 25
+ℹ suites 0
+ℹ pass 25
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 25.927542
+Music case V0.4.0 passed: new 1000-triangle/3-batch GLB, native dimensions, recessed insert, high-frost spine, thin-lid optics, and continuous theme/clarity round trips.
+
+> rhine-music-demo@0.4.0 check:audio
+> node --test scripts/check-music-audio.mjs && node --experimental-strip-types --test scripts/check-music-player.mjs
+
+▶ FFmpeg real format decoding, immutable sources, bounded cache and HTTP security
+  ✔ decode .wav pcm_s24le from actual media (139.495459ms)
+  ✔ decode .flac flac from actual media (110.819833ms)
+  ✔ decode .m4a alac from actual media (111.787416ms)
+  ✔ decode .aiff pcm_s24be from actual media (109.670292ms)
+  ✔ decode .wv wavpack from actual media (114.399ms)
+  ✔ decode .mp3 mp3 from actual media (54.527375ms)
+  ✔ decode .opus opus from actual media (56.485584ms)
+  ✔ decode .aac aac from actual media (55.729792ms)
+  ✔ decode .wav pcm_f32le from actual media (54.450416ms)
+  ✔ renamed file reports actual codec; corrupt audio fails without publishing cache (80.96525ms)
+  ✔ symlink escape and cancellation reject before decoding (27.816666ms)
+  ✔ shared decode survives one consumer cancelling and leaves no temporary file (53.501459ms)
+  ✔ APE official FFmpeg regression sample, when explicitly supplied (288.758166ms)
+  ✔ missing ffprobe is unavailable and completed cache is capped even for fresh entries (27.330125ms)
+  ✔ HTTP PCM preparation and seek ranges, no paths in JSON, wrong origin/host rejected (49.281541ms)
+  ✔ real CoreAudio device selection, progress, pause, seek, resume, end and rapid cancellation at zero gain (2778.509041ms)
+✔ FFmpeg real format decoding, immutable sources, bounded cache and HTTP security (4482.101625ms)
+✔ native pending decode uses the latest device and volume; repeated playing track keeps its position (3.9545ms)
+ℹ tests 18
+ℹ suites 0
+ℹ pass 18
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 4701.103458
+✔ BGM has an independent default, live volume, zero-volume gate, and clamped settings (4.396708ms)
+✔ song playback waits for BGM silence despite rapid BGM volume and toggle changes (1.36175ms)
+✔ rapidly cancelling a pending song restores only the latest BGM volume (0.903458ms)
+✔ a late BGM play resolution stays silent when a song has taken over (0.273ms)
+✔ CoreAudio transport retains paused position when switching backend, and auto-advances without BGM (0.89875ms)
+✔ local decode preparation cancellation never starts a late browser source (0.277917ms)
+✔ browser APE playback prepares PCM without probing or starting native capabilities (0.238166ms)
+✔ native playback survives visibility changes, but dispose sends one unload-safe stop (0.241709ms)
+ℹ tests 8
+ℹ suites 0
+ℹ pass 8
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 147.252125
+
+> rhine-music-demo@0.4.0 check:overview
+> node scripts/check-music-overview.mjs
+
+Overview: camera convergence at 20/30/60/120 fps, responsive labels, exact real-column counts/no duplicates, production projection for unequal real columns and filled loops, viewport culling, unloaded/empty state passed.
+
+> rhine-music-demo@0.4.0 check:cover
+> node scripts/check-music-cover.mjs
+
+V0.4.0 cover pipeline passed: all aspect ratios, shared UV/painter, half-texel guards, 3-source cold-start bound, priority selection, 16 MiB cache cap, 8-tile/2 MiB partial uploads, no stale recycled art, correct top/bottom UV mapping, bounded prewarm, reset/dispose races, independent snapshots and viewer.
+
+> rhine-music-demo@0.4.0 check:startup
+> node scripts/check-music-startup.mjs && node scripts/check-music-renderer-startup.mjs && node scripts/check-quality.mjs
+
+Music frame timing: cold start, 600-frame steady window, percentiles, eviction, reset and nonnegative input checks passed.
+{
+  "sourceHash": "08de56ac8543",
+  "steadyState": {
+    "callbacks": 601,
+    "sceneCalls": 601,
+    "pendingContinuations": 1,
+    "fps": 60
+  },
+  "opaqueBootSignal": {
+    "callbacks": 601,
+    "sceneCallsWhileOpaque": 0,
+    "respected": true
+  },
+  "hiddenResume": {
+    "hiddenSceneCalls": 0,
+    "hiddenContinuations": 0,
+    "resumedTextClockJumpSeconds": 0,
+    "repeatedResumeCycles": 300
+  },
+  "disposal": {
+    "scene": 1,
+    "boot": 1,
+    "player": 1,
+    "effects": 1,
+    "trackFocus": 1
+  },
+  "asyncBoundaries": {
+    "lateLibraryResponses": 4,
+    "disposedStartupStages": 4,
+    "browserNativeInitCalls": 0
+  },
+  "scope": "Production CPU control-flow and lifecycle regression only; does not measure GPU work or establish real-device frame rate."
+}
+{
+  "sourceHash": "c32a3088c647",
+  "preparation": {
+    "coldTiles": 432,
+    "coldUploadTurns": 7,
+    "maximumUploadTurns": 12,
+    "maximumTilesPerTurn": 64,
+    "realDraws": 2
+  },
+  "interruptionBoundaries": [
+    "compile",
+    "covers",
+    "uploadFrame",
+    "drawFrame"
+  ],
+  "disposal": {
+    "idempotent": true,
+    "uniqueResourceOwnership": true,
+    "passes": 5,
+    "contextLost": true,
+    "canvasRemoved": true
+  },
+  "textureQuality": {
+    "atlasAnisotropy": 1,
+    "atlasReuploadsFromPresets": 0,
+    "selectionMaximum": 8,
+    "hardwareLimitRespected": true
+  },
+  "scope": "Production AST method/function execution with mocked GPU. Browser pixel, GL error and frame-rate measurements are separate."
+}
+Quality checks passed: migration, invalid storage, presets, supersampling and 48 device-limit combinations.
+
+> rhine-music-demo@0.4.0 check:lighting
+> node scripts/check-music-lighting.mjs && node scripts/check-music-row-lighting.mjs && node scripts/check-music-row-motion.mjs && node scripts/check-music-boot-timing.mjs
+
+Music lighting passed: actual 4.45×3.35 shell edge alignment, narrow warm ribbon, unchanged cover shader, gradual start, frame-rate independence, rapid reversal, reduced motion, lower-left direction, neighboring-column cone coverage, full-pool clearance 38.78, cinematic track/replay anchoring, empty-library disable.
+V0.3.1 row lighting passed: exact FWHM/offset units, seven-lane continuity, 16× adjacent-row field contrast, original-calibrated B fill, unchanged core and A/C exposure, continuous fill controls, same-world ownership/elevation, frame-rate-independent follow/reversal, uniform-only switching, stable light list, no added geometry/shadow pass, reduced motion, theme/detail handoff and input bounds. GPU output and performance require the separate browser review.
+V0.3.1 row motion passed: adjustable 0.4–2.4s soft start/finish, 95% duration at 30/60/120 fps, matching rail rhythm; bounded bursts/reversals, live pace edits, continuous mode comparison, in-flight rebase, reduced motion, complete opening and skip.
+Music boot passed: 11.6 seconds at 30/60/120 fps; opaque-prologue WebGL gate and 6.32s dissolve pre-roll at 20/30/60/120 fps; original 5.2 second live-scene clock; slogan continuity, cold compilation, suspension, replay, endpoint handoff, skip and live reduced motion.
+
+> rhine-music-demo@0.4.0 check:interaction
+> node scripts/check-music-motion-speed.mjs && node scripts/check-music-ui-motion.mjs && node scripts/check-music-wheel-navigation.mjs && node scripts/check-music-presentation.mjs
+
+Music motion speed passed: invalid settings, live notifications, 0.25/1/3× endpoints and proportional timing at 20/30/60/120 fps, independent light-duration composition, reduced motion and continuous mid-flight theme retiming.
+✔ slow title reels retain their faces until their actual animations finish (2.266875ms)
+✔ interrupted title cleanup cannot settle the replacement and mid-roll speed keeps progress (1.226125ms)
+✔ ruler springs and ripple delays produce equal output at equal scaled time (8.641792ms)
+ℹ tests 3
+ℹ suites 0
+ℹ pass 3
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 20.824083
+Music wheel navigation passed: pixel/line/page units, trackpad accumulation, fast input, reversal, column isolation, native scroll and zoom ownership.
+✔ menu waits for both browse exit and completed elevated camera presentation (1.122958ms)
+✔ detail switch waits for menu exit and new presentation without returning to the archive (0.942042ms)
+✔ search from detail returns to the archive, settles its selection, then reopens (0.200167ms)
+✔ search from opening returns to the archive, settles its selection, then reopens (0.087833ms)
+✔ search from switch-hiding returns to the archive, settles its selection, then reopens (0.087417ms)
+✔ search from switching returns to the archive, settles its selection, then reopens (0.102667ms)
+✔ search replacements during exit, return and row movement preserve the latest destination (0.114041ms)
+✔ back during search hiding cancels reopening (0.095167ms)
+✔ back during search returning cancels reopening (0.064209ms)
+✔ back during search selecting cancels reopening (0.100167ms)
+✔ reduced-motion search preserves archive selection and reopen ordering (0.0915ms)
+✔ rapid requests retain the latest selection and its navigation intent (0.136584ms)
+✔ back during text exit cancels the pending detail switch and returns once (0.08675ms)
+✔ latest back during a committed rail movement settles into browsing (0.058542ms)
+✔ replay/reset invalidates old menu-exit callbacks (0.059208ms)
+✔ skip/replay handoff cannot use an old browse exit to reveal the new menu (0.045792ms)
+✔ latest selection during browse retirement settles its rail before extracting (0.088458ms)
+✔ back before extraction invalidates the pending browse callback (0.053208ms)
+✔ interrupted opening ignores stale callbacks and honours a later open request (0.05325ms)
+✔ reduced-motion synchronous callbacks preserve ordering and never deadlock (0.067083ms)
+✔ enabling reduced motion during an exit can finish existing callbacks safely (0.040666ms)
+✔ production menu transition moves right and fades before switching the detail album (0.790209ms)
+✔ production transition cancellation cannot complete an obsolete exit (0.203458ms)
+✔ music speed retimes an active surface and leaves reduced motion immediate (0.237208ms)
+✔ near-end reversal resumes at the painted position and finishes in the remaining distance (0.146708ms)
+ℹ tests 25
+ℹ suites 0
+ℹ pass 25
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 26.867791
+
+> rhine-music-demo@0.4.0 check:viewport
+> node --experimental-strip-types scripts/check-viewport.mjs
+
+Viewport, reference framing, touch thresholds and render resolution checks passed.
+
+> rhine-music-demo@0.4.0 check:content
+> node --experimental-strip-types --test scripts/check-content.mjs
+
+✔ all forty downloads match the shared content, including the UTF-8 BOM (9.238ms)
+✔ rejects missing title (0.5095ms)
+✔ rejects blank abstract (0.184917ms)
+✔ rejects duplicate ID (0.181416ms)
+✔ rejects reordered ID (0.199333ms)
+✔ rejects unknown category (0.193459ms)
+✔ rejects unbalanced columns (0.1775ms)
+✔ rejects missing record (0.157958ms)
+✔ rejects null record (0.220084ms)
+✔ rejects empty findings (0.228458ms)
+✔ rejects non-text findings (0.233417ms)
+✔ rejects unsafe URL (0.216ms)
+✔ rejects invalid URL (0.209583ms)
+✔ rejects duplicate categories (0.164375ms)
+✔ rejects reserved category (0.161667ms)
+✔ rejects mismatched columns (0.158209ms)
+✔ accepts independent filter and column order (0.146625ms)
+✔ plain-text punctuation stays literal in HTML and downloadable text (0.220375ms)
+ℹ tests 18
+ℹ suites 0
+ℹ pass 18
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 142.492209
+
+> rhine-music-demo@0.4.0 check:credits
+> node --test scripts/check-local-music-credits.mjs scripts/check-qq-credits.mjs scripts/check-music-credits.mjs
+
+✔ common credit fields preserve distinct responsibilities and group names (1.901166ms)
+✔ native ID3 people objects expose explicit roles absent from common tags (0.170875ms)
+✔ Vorbis performers require explicit recognizable instrument or vocal suffixes (0.2975ms)
+✔ duplicates across common and native are removed while roles and track identities remain distinct (0.135833ms)
+✔ comments, lyrics, artwork and unrelated native tags never become credits (0.087667ms)
+✔ malformed tags are ignored and metadata remains unchanged (0.592291ms)
+✔ local roles and online credits coexist, persist, and stay out of private metadata transport (14.45575ms)
+✔ failed explicit refresh preserves useful credits and reports the query failure (4.109125ms)
+✔ partial refresh replaces only successfully refreshed track credits (13.334875ms)
+✔ rate limiting stops remaining albums, keeps the partial data and returns the cooldown (4.004ms)
+✔ late results cannot attach to changed tracks or a removed root (3.530625ms)
+✔ partial network failures can resume after cooldown without forcing successful tracks (2.693ms)
+✔ disk write failures never claim new credits were saved successfully (3.069708ms)
+✔ a simultaneous scan retains newly completed credits for unchanged tracks (3.4555ms)
+✔ credits HTTP endpoint is manual, contact-free, validated and protected by Origin checks (26.320875ms)
+✔ matching requires title, artist, real album, duration and recording edition; never chooses a first ambiguous hit (3.438ms)
+✔ matching supports traditional tags, explicit bilingual artist aliases and unordered complete artist sets (0.344625ms)
+✔ role mapping preserves every original role and does not treat unknown numeric role IDs as producers (1.051792ms)
+✔ lookup uses only public metadata requests, real album tags, track IDs and source URLs; cache survives restart (33.207208ms)
+✔ empty and ambiguous search results are cached; expiry permits one fresh query (3.363125ms)
+✔ missing producer lists are negative cached without inventing credits (1.939208ms)
+✔ HTTP 429 stops remaining tracks, persists Retry-After cooldown and force cannot bypass it (2.259875ms)
+✔ a later 429 preserves earlier verified credits and reports partial without any remaining requests (2.403958ms)
+✔ HTTP and business failures are errors, never absence; business rate limits also cool down (4.904625ms)
+✔ concurrent lookups coalesce identical metadata and serialize search plus personnel with the same pacing (7.228291ms)
+✔ timeout aborts the request once and no follow-up traffic is attempted (19.202167ms)
+✔ insufficient tags do not issue a query and progress callback failures cannot corrupt lookup (1.840042ms)
+✔ an unreadable cache cannot reject during construction or break local library startup (7.387833ms)
+✔ failed cache writes roll back in-memory success so a recovered lookup persists fresh metadata (2.263375ms)
+✔ a 429 still exposes retryAt and stops requests even when its cooldown cannot be written (1.950208ms)
+ℹ tests 30
+ℹ suites 0
+ℹ pass 30
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 302.28825
+✔ Node engine matches the installed Vite requirement (1.029041ms)
+✔ health identity distinguishes our project, another project, HTML, and free ports (0.200542ms)
+✔ old service requires both exact local process identity and music APIs (0.143667ms)
+✔ legacy process identity supports Chinese spaced cwd and rejects another script (0.41ms)
+✔ reuse wins over free default; occupied default selects next free port (1.233667ms)
+播放器已在运行，直接打开：http://127.0.0.1:5175/
+现在可以关闭此终端窗口；播放器服务会在后台继续运行。
+✔ existing service is opened without installing, building, starting, or writing data (7.198875ms)
+播放器已启动：http://127.0.0.1:5175/
+现在可以关闭此终端窗口；播放器服务会在后台继续运行。
+✔ cold launch preserves spaced paths and releases lock; build failure never starts or opens (3.540125ms)
+播放器已启动：http://127.0.0.1:5175/
+现在可以关闭此终端窗口；播放器服务会在后台继续运行。
+✔ concurrent double click cannot prepare two copies (1.7705ms)
+✔ two launches do not race to delete a crashed launchers stale lock (1.608166ms)
+✔ content hash sees same-mtime edits and removals without rebuilding for README (4.784292ms)
+✔ installed ESM-only and type-only dependencies are ready without require entrypoints (2.280875ms)
+✔ Finder command changes cwd safely from another directory (78.454792ms)
+✔ health endpoint is read-only and retains Host and Origin restrictions (0.945ms)
+ℹ tests 13
+ℹ suites 0
+ℹ pass 13
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 107.746208
+
+Final lifecycle regression after preparation/poll race fix:
+
+> rhine-music-demo@0.4.0 check:startup
+> node scripts/check-music-startup.mjs && node scripts/check-music-renderer-startup.mjs && node scripts/check-quality.mjs
+
+Music frame timing: cold start, 600-frame steady window, percentiles, eviction, reset and nonnegative input checks passed.
+{
+  "sourceHash": "08de56ac8543",
+  "steadyState": {
+    "callbacks": 601,
+    "sceneCalls": 601,
+    "pendingContinuations": 1,
+    "fps": 60
+  },
+  "opaqueBootSignal": {
+    "callbacks": 601,
+    "sceneCallsWhileOpaque": 0,
+    "respected": true
+  },
+  "hiddenResume": {
+    "hiddenSceneCalls": 0,
+    "hiddenContinuations": 0,
+    "resumedTextClockJumpSeconds": 0,
+    "repeatedResumeCycles": 300
+  },
+  "disposal": {
+    "scene": 1,
+    "boot": 1,
+    "player": 1,
+    "effects": 1,
+    "trackFocus": 1
+  },
+  "asyncBoundaries": {
+    "lateLibraryResponses": 4,
+    "disposedStartupStages": 4,
+    "browserNativeInitCalls": 0
+  },
+  "scanDuringPreparation": {
+    "heldAlbumCount": 1,
+    "synchronizedAfterHandoff": 3,
+    "sceneLoads": 1,
+    "sceneRefreshes": 1
+  },
+  "scope": "Production CPU control-flow and lifecycle regression only; does not measure GPU work or establish real-device frame rate."
+}
+{
+  "sourceHash": "c32a3088c647",
+  "preparation": {
+    "coldTiles": 432,
+    "coldUploadTurns": 7,
+    "maximumUploadTurns": 12,
+    "maximumTilesPerTurn": 64,
+    "realDraws": 2
+  },
+  "interruptionBoundaries": [
+    "compile",
+    "covers",
+    "uploadFrame",
+    "drawFrame"
+  ],
+  "disposal": {
+    "idempotent": true,
+    "uniqueResourceOwnership": true,
+    "passes": 5,
+    "contextLost": true,
+    "canvasRemoved": true
+  },
+  "textureQuality": {
+    "atlasAnisotropy": 1,
+    "atlasReuploadsFromPresets": 0,
+    "selectionMaximum": 8,
+    "hardwareLimitRespected": true
+  },
+  "scope": "Production AST method/function execution with mocked GPU. Browser pixel, GL error and frame-rate measurements are separate."
+}
+Quality checks passed: migration, invalid storage, presets, supersampling and 48 device-limit combinations.
+
+Final production build after preparation/poll race fix:
+
+> rhine-music-demo@0.4.0 prebuild
+> node scripts/export-records.mjs
+
+Prepared 40 downloadable archive records.
+
+> rhine-music-demo@0.4.0 build
+> tsc && vite build && node scripts/build-pwa.mjs
+
+vite v7.3.6 building client environment for production...
+transforming...
+✓ 110 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                            1.08 kB │ gzip:   0.59 kB
+dist/assets/archive-main-DO9dVcMl.css     16.34 kB │ gzip:   3.03 kB
+dist/assets/audio-BesObhbc.css            35.99 kB │ gzip:   8.49 kB
+dist/assets/music-app-QvyxWZUM.css        58.47 kB │ gzip:  11.84 kB
+dist/assets/index-Dr6dzzbz.js              2.28 kB │ gzip:   1.15 kB
+dist/assets/archive-main-JR2RMAVV.js      83.82 kB │ gzip:  26.09 kB
+dist/assets/music-app-6mblFTYr.js        139.29 kB │ gzip:  44.85 kB
+dist/assets/audio-CkB_OSGR.js          1,137.71 kB │ gzip: 377.50 kB
+
+(!) Some chunks are larger than 500 kB after minification. Consider:
+- Using dynamic import() to code-split the application
+- Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+✓ built in 1.05s
+Offline release f028fb79b1b6884a: 75 files, 28.6 MiB.
