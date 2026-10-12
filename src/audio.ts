@@ -1,5 +1,4 @@
 import { hasTypingBetween } from "./typing-rhythm";
-import { TYPING_PCM, TYPING_SAMPLE_RATE } from "./typing-samples";
 import { assetUrl } from "./asset-url";
 export type Sound =
   | "page-open"
@@ -29,31 +28,6 @@ export type AudioPreferences = {
 const STEMS = ["atmosphere", "motif", "pulse"] as const;
 const LOOP_SECONDS = 160 / 3;
 const noiseBuffers = new WeakMap<BaseAudioContext, AudioBuffer>();
-const typingBuffers = new WeakMap<
-  BaseAudioContext,
-  { buffers: AudioBuffer[]; next: number }
->();
-function typingSample(c: BaseAudioContext) {
-  let bank = typingBuffers.get(c);
-  if (!bank) {
-    bank = {
-      buffers: TYPING_PCM.map((encoded) => {
-        const bytes = atob(encoded);
-        const buffer = c.createBuffer(1, bytes.length / 2, TYPING_SAMPLE_RATE);
-        const data = buffer.getChannelData(0);
-        for (let i = 0; i < data.length; i++) {
-          const word =
-            bytes.charCodeAt(i * 2) | (bytes.charCodeAt(i * 2 + 1) << 8);
-          data[i] = (word > 32767 ? word - 65536 : word) / 32768;
-        }
-        return buffer;
-      }),
-      next: 0,
-    };
-    typingBuffers.set(c, bank);
-  }
-  return bank.buffers[bank.next++ % bank.buffers.length];
-}
 const clamp = (x: number) =>
   Math.max(0, Math.min(1, Number.isFinite(x) ? x : 0));
 const level = (
@@ -101,22 +75,16 @@ export function synthesizeSound(
     delay: number,
     duration: number,
     attack = 0.006,
-    preserveEnvelope = false,
   ) => {
     const env = c.createGain(),
       start = at + delay;
-    if (preserveEnvelope) {
-      // The reference excerpt already contains the impact envelope and edge fades.
-      env.gain.setValueAtTime(gain, start);
-    } else {
-      env.gain.setValueAtTime(0, start);
-      env.gain.linearRampToValueAtTime(
-        gain,
-        start + Math.min(attack, duration * 0.3),
-      );
-      env.gain.exponentialRampToValueAtTime(0.00001, start + duration);
-      env.gain.linearRampToValueAtTime(0, start + duration + 0.012);
-    }
+    env.gain.setValueAtTime(0, start);
+    env.gain.linearRampToValueAtTime(
+      gain,
+      start + Math.min(attack, duration * 0.3),
+    );
+    env.gain.exponentialRampToValueAtTime(0.00001, start + duration);
+    env.gain.linearRampToValueAtTime(0, start + duration + 0.012);
     node.connect(env);
     env.connect(output);
     sources.push(source);
@@ -229,12 +197,11 @@ export function synthesizeSound(
       air(2100, 1300, 0.033, 0.064, 0, 0.005);
       tone(1050, 1050, 0.012, 0.06, 0, 0.005);
       break;
-    case "key": {
-      const source = c.createBufferSource();
-      source.buffer = typingSample(c);
-      connect(source, source, 0.2, 0, source.buffer.duration, 0, true);
+    case "key":
+      // Original electronic input cue; generated oscillators, no recorded sample.
+      tone(920, 740, 0.022, 0.028, 0, 0.002);
+      tone(1840, 1480, 0.005, 0.014, 0, 0.001);
       break;
-    }
     case "tick":
       glass(1680, 0.064, 0.24);
       break;

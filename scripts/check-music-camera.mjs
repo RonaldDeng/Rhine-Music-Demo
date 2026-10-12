@@ -1,7 +1,146 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import ts from 'typescript';
 import * as THREE from 'three';
 import { MusicCameraMotion, MusicPlacementMotion, MusicPresentation, musicArchiveOffset, musicArchiveTracksSettled, musicCinematicPose, musicExtractionAnchor } from '../src/music-camera.ts';
-import { damp } from '../src/motion.ts';
+import { damp, smooth, settlingWave } from '../src/motion.ts';
+import { MusicArchiveMotion } from '../src/music-archive-motion.ts';
+import { COLUMN_SPACING as ORIGINAL_COLUMN_SPACING, ROW_SPACING } from '../src/archive-loop.ts';
+import { archiveFraming } from '../src/viewport-layout.ts';
+import { overviewFraming } from '../src/music-overview.ts';
+import { MUSIC_MODEL, MUSIC_COLUMN_SPACING as COLUMN_SPACING } from '../src/music-model.ts';
+import { musicIntroPose } from '../src/music-intro-motion.ts';
+
+// Run the scene's actual camera target construction: a unit-only test of the
+// dolly would miss the speed-driven yaw layered on top by ArchiveScene.update.
+const sceneSource = fs.readFileSync(new URL('../src/scene.ts', import.meta.url), 'utf8');
+const sceneTree = ts.createSourceFile('scene.ts', sceneSource, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+const sceneClass = sceneTree.statements.find(node => ts.isClassDeclaration(node) && node.name?.text === 'ArchiveScene');
+// Execute the real constructor field expression so the original archive keeps
+// its historical spacing while music uses the revised geometry-aware spacing.
+const spacingField = sceneClass.members.find(node => ts.isPropertyDeclaration(node) && node.name.getText(sceneTree) === 'columnSpacing');
+assert.ok(spacingField?.initializer, 'The scene owns its spacing per instance');
+const sceneSpacing = new Function('musicLibrary', 'MUSIC_COLUMN_SPACING', 'COLUMN_SPACING',
+  `return ${spacingField.initializer.getText(sceneTree)};`);
+assert.equal(sceneSpacing(true, COLUMN_SPACING, ORIGINAL_COLUMN_SPACING), COLUMN_SPACING);
+assert.equal(sceneSpacing(false, COLUMN_SPACING, ORIGINAL_COLUMN_SPACING), 5.2,
+  'The original archive retains its 5.2-unit column spacing');
+const updateNode = sceneClass.members.find(node => ts.isMethodDeclaration(node) && node.name.getText(sceneTree) === 'update');
+const cameraStatements = [...updateNode.body.statements];
+const cameraStart = cameraStatements.findIndex(node => ts.isVariableStatement(node) &&
+  node.declarationList.declarations.some(declaration => declaration.name.getText(sceneTree) === 'orbit'));
+const cameraEnd = cameraStatements.findIndex((node, i) => i > cameraStart && ts.isIfStatement(node) &&
+  node.thenStatement.getText(sceneTree).includes('this.musicCamera.update('));
+assert.ok(cameraStart >= 0 && cameraEnd > cameraStart, 'Extract the production camera target path');
+const cameraDependencies = { THREE, ease: smooth, musicLibrary: true, ROW_SPACING,
+  archiveFraming, overviewFraming, musicArchiveOffset, settlingWave, MUSIC_MODEL,
+  musicIntroPose, musicCinematicPose, musicExtractionAnchor,
+  MUSIC_INSPECTION_LIFT: MUSIC_MODEL.height + .12, MUSIC_DETAIL_ELEVATION: THREE.MathUtils.degToRad(20) };
+const cameraFactory = ts.transpileModule(`return function cameraTargets(dt, overview = 0, options = {}) {
+  const cinematic = options.cinematic, musicLibrary = options.musicLibrary ?? true;
+  const musicIntro = Boolean(musicLibrary && cinematic?.musicIntro);
+  const shot = options.shot ?? 29.1, detail = options.detail ?? 0;
+  const introPose = musicIntro ? musicIntroPose(shot) : undefined;
+  const introSettle = introPose?.settle ?? 0;
+  ${cameraStatements.slice(cameraStart, cameraEnd).map(node => node.getText(sceneTree)).join('\n')}
+  return { position: cameraPosition, aim: cameraAim, span: framing.span, direction: viewDirection, distance };
+};`, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None } }).outputText;
+const productionCameraTargets = new Function(...Object.keys(cameraDependencies), cameraFactory)(...Object.values(cameraDependencies));
+
+// Exercise the real opening camera branch through every framing surface. The
+// old film used model-corner anchoring; moving that model here detects any old
+// anchor or pan accidentally surviving in the new music-only shot.
+function introCameraHost(width, height, selectedLane = 2) {
+  return {
+    container: { clientWidth: width, clientHeight: height, closest: () => null },
+    musicCamera: { navigationElevation: () => 0 }, musicArrayMode: 'filled',
+    rail: { value: -2.17, velocity: 0 }, columnSpacing: COLUMN_SPACING,
+    pointer: new THREE.Vector2(), reduced: false,
+    musicPresentation: { holdsDetail: false },
+    model: { position: new THREE.Vector3((selectedLane - 2) * COLUMN_SPACING, -1.5, -2.17) },
+  };
+}
+const cameraClose = (actual, expected, message) =>
+  assert.ok(actual.distanceTo(expected) < 1e-10, `${message}: ${actual.toArray()} vs ${expected.toArray()}`);
+for (const [width, height] of [[1920, 1080], [3440, 1440], [1024, 768], [390, 844]]) {
+  for (const selectedLane of [-8, 0, 2, 11]) {
+    const host = introCameraHost(width, height, selectedLane);
+    for (const frame of [1, 15, 32, 45, 60, 75]) {
+      const shot = 21.92 + (frame - 1) / 25, pose = musicIntroPose(shot);
+      const result = productionCameraTargets.call(host, 0, 0, { shot, cinematic: { musicIntro: true } });
+      cameraClose(result.aim, new THREE.Vector3(pose.aimX, pose.aimY, pose.aimZ),
+        'Early music opening uses the independent axial target without old corner tracking');
+      const yaw = THREE.MathUtils.degToRad(pose.yaw), elevation = THREE.MathUtils.degToRad(pose.elevation);
+      cameraClose(result.direction, new THREE.Vector3(-Math.sin(yaw) * Math.cos(elevation),
+        Math.sin(elevation), Math.cos(yaw) * Math.cos(elevation)), 'The authored music heading survives scene integration');
+      assert.ok(Math.abs(result.position.distanceTo(result.aim) - pose.distance) < 1e-10);
+    }
+    const archive = productionCameraTargets.call(host, 0);
+    for (const shot of [21.92 + 119 / 25, 27.12]) {
+      const result = productionCameraTargets.call(host, 0, 0, { shot, cinematic: { musicIntro: true } });
+      cameraClose(result.position, archive.position, 'The opening ends at the actual browsing position');
+      cameraClose(result.aim, archive.aim, 'The opening ends at the actual browsing aim, including portrait');
+      assert.equal(result.span, archive.span, 'The opening and browser use the same responsive visible height');
+    }
+  }
+}
+// Captured from the pre-reconstruction original camera, with this same model
+// position and viewport. It covers the original film's late corner-tracking
+// branch; the new music-only sampler must never change this result.
+const originalHost = introCameraHost(1920, 1080);
+originalHost.columnSpacing = ORIGINAL_COLUMN_SPACING;
+const originalFilm = productionCameraTargets.call(originalHost, 0, 0,
+  { cinematic: {}, musicLibrary: false, shot: 26.1 });
+cameraClose(originalFilm.position, new THREE.Vector3(-111.46422398457192, 46.27732925810111, 65.43494614783081),
+  'The original film retains its pre-reconstruction camera position');
+cameraClose(originalFilm.aim, new THREE.Vector3(-1.6638981203903576, .6328916229944999, .3391327840981188),
+  'The original film retains its pre-reconstruction camera anchor');
+assert.equal(originalFilm.span, 7.455538747873798);
+
+function verifyColumnHeading({ hz, guided, reverse, overview, width, height, pointer, reduced }) {
+  const camera = new THREE.PerspectiveCamera(), aim = new THREE.Vector3();
+  const motion = new MusicCameraMotion(), travel = new MusicArchiveMotion();
+  const tracks = Object.fromEntries(['rail', 'column', 'shoulder', 'lane'].map(key => [key, { value: 0, velocity: 0 }]));
+  const host = { container: { clientWidth: width, clientHeight: height, closest: () => null },
+    columnSpacing: COLUMN_SPACING, musicCamera: motion, columnCamera: tracks.column, rail: tracks.rail,
+    musicArrayMode: 'realistic', musicPresentation: { holdsDetail: false },
+    pointer: new THREE.Vector2(...pointer), reduced };
+  let targets;
+  const retarget = lane => {
+    targets = { rail: 0, shoulder: 0, column: lane * COLUMN_SPACING, lane };
+    if (guided) travel.retarget(tracks, targets);
+  };
+  const initial = productionCameraTargets.call(host, 0, overview);
+  motion.update(camera, aim, initial.position, initial.aim, initial.span, 0, true);
+  const initialDirection = camera.getWorldDirection(new THREE.Vector3());
+  let maxDirectionError = 0, moved = 0;
+  retarget(1);
+  for (let frame = 0; frame < hz * 6; frame++) {
+    if (reverse && frame === Math.round(hz * .42)) retarget(4);
+    if (reverse && frame === Math.round(hz * .88)) retarget(-2);
+    if (guided) travel.update(tracks, 1 / hz, reduced);
+    else for (const key of Object.keys(tracks)) {
+      if (reduced) Object.assign(tracks[key], { value: targets[key], velocity: 0 });
+      else damp(tracks[key], targets[key], 3.7, 1 / hz);
+    }
+    const target = productionCameraTargets.call(host, 1 / hz, overview);
+    motion.update(camera, aim, target.position, target.aim, target.span, 1 / hz, reduced);
+    maxDirectionError = Math.max(maxDirectionError,
+      camera.getWorldDirection(new THREE.Vector3()).distanceTo(initialDirection));
+    moved = Math.max(moved, Math.abs(tracks.column.value));
+  }
+  assert.ok(moved > COLUMN_SPACING * .9, 'The regression performs real column travel');
+  assert.ok(Math.abs(tracks.column.value - targets.column) < .0001, 'Column movement retains its endpoint');
+  assert.ok(maxDirectionError < 1e-12,
+    `Cross-column motion keeps its camera heading through travel and settling (${JSON.stringify({ hz, guided, reverse, overview, width, reduced })}); direction drift ${maxDirectionError}`);
+}
+
+for (const hz of [30, 60, 120]) for (const guided of [false, true]) for (const reverse of [false, true]) {
+  for (const overview of [0, 1]) for (const [width, height] of [[1440, 900], [390, 844]]) {
+    for (const reduced of [false, true]) verifyColumnHeading({ hz, guided, reverse, overview, width, height,
+      pointer: [.75, .6], reduced });
+  }
+}
 
 for (const [width, height] of [[390, 844], [1080, 1920], [1049, 1000], [0, 0]]) {
   assert.deepEqual(musicArchiveOffset(width, height), { x: 0, y: 0 },
@@ -72,10 +211,10 @@ const front = musicCinematicPose(34.56);
 assert.deepEqual(front, { yaw: 0, elevation: 0, centered: 1, detail: 1 }, 'Film finishes face-on and centered');
 const navigation = setup();
 for (let frame = 0; frame < 180; frame++) {
-  const orbit = navigation.motion.navigation(4, -5, 0, 1 / 60, false);
-  assert.ok(Math.abs(orbit.yaw) <= .018 && Math.abs(orbit.elevation) <= .006, 'Browsing orbit stays subtle');
+  const elevation = navigation.motion.navigationElevation(-5, 0, 1 / 60, false);
+  assert.ok(Math.abs(elevation) <= .006, 'Filled-array vertical browsing retains its subtle elevation');
 }
-assert.deepEqual(navigation.motion.navigation(10, 10, 0, 0, true), { yaw: 0, elevation: 0 });
+assert.equal(navigation.motion.navigationElevation(10, 0, 0, true), 0);
 
 function verifyPresentation(hz, reduced = false) {
   const presentation = new MusicPresentation();
@@ -207,7 +346,7 @@ for (const hz of [30, 120]) {
   presentation.update(.1, true, true, false);
   assert.equal(presentation.phase, 'archive');
   const tracks = Object.fromEntries(['rail', 'column', 'shoulder', 'lane'].map(key => [key, { value: 0, velocity: 0 }]));
-  let targets = { rail: -.62, column: 5.2, shoulder: 1, lane: 1 };
+  let targets = { rail: -.62, column: COLUMN_SPACING, shoulder: 1, lane: 1 };
   presentation.selectionChanged();
   assert.equal(presentation.phase, 'returning-array', 'Selecting a new cell invalidates readiness immediately');
   for (let frame = 0; frame < hz / 5; frame++) {
@@ -216,7 +355,7 @@ for (const hz of [30, 120]) {
   }
   assert.equal(presentation.phase, 'returning-array', 'A settled camera cannot bypass the moving selection tracks');
   const previousSpeed = tracks.column.velocity;
-  targets = { rail: -1.24, column: -5.2, shoulder: 2, lane: -1 };
+  targets = { rail: -1.24, column: -COLUMN_SPACING, shoulder: 2, lane: -1 };
   presentation.selectionChanged();
   assert.equal(tracks.column.velocity, previousSpeed, 'Rapid browsing keeps the existing track velocity');
   for (let frame = 0; frame < hz * 5; frame++) {
@@ -231,5 +370,5 @@ for (const hz of [30, 120]) {
     tracks[key].velocity = speed;
   }
 }
-console.log('Music camera passed: landscape headroom and framing boundaries, continuous motion, frame-rate independence, original-film oblique pause/frontal ending, shared entry/return gates, elevated detail, interruption, replay and reduced motion.');
+console.log('Music camera passed: fixed heading across single/multiple/reversed column travel and settling (30/60/120 Hz, spring/guided, preview/overview, landscape/portrait, pointer offset, reduced motion); landscape framing, continuous motion, film handoff, shared entry/return, elevated detail and interruption.');
 console.log(`Presentation pan: ${(pan240.early * 100).toFixed(3)}% at 0.2 s; 95% at ${pan240.t95.toFixed(3)} s (rendered camera, 240 Hz).`);

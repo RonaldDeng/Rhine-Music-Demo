@@ -438,8 +438,13 @@ function animationElement(hidden = false) {
     let resolve, reject, finished;
     let settled = false, cancelled = false;
     const animation = {
-      frames, options, playbackRate: 1,
+      frames, options, playbackRate: 1, currentTime: 0,
       updatePlaybackRate(rate) { this.playbackRate = rate; },
+      advance(milliseconds) {
+        if (settled || cancelled) return;
+        this.currentTime += milliseconds * this.playbackRate;
+        if (this.currentTime >= options.duration) this.finish();
+      },
       get finished() {
         // Native Animation.finished is only observed when its getter is used.
         return finished ??= new Promise((done, fail) => {
@@ -457,6 +462,224 @@ function animationElement(hidden = false) {
   };
   return element;
 }
+
+const flushAnimations = async () => { await Promise.resolve(); await Promise.resolve(); await Promise.resolve(); };
+
+function delayedSurface(t) {
+  const originalComputedStyle = globalThis.getComputedStyle;
+  globalThis.getComputedStyle = (element) => element;
+  setMusicMotionSpeed(1);
+  const root = animationElement(true), article = animationElement();
+  const transition = new SurfaceTransition(root, article, 360, 240, 'right');
+  t.after(() => {
+    transition.dispose();
+    setMusicMotionSpeed(1);
+    globalThis.getComputedStyle = originalComputedStyle;
+  });
+  return { root, article, transition };
+}
+
+test('reading-field lead keeps text hidden for 70ms then preserves its full 360ms entrance and 240ms exit', async (t) => {
+  const { root, article, transition } = delayedSurface(t);
+  let shown = 0;
+  transition.show(false, 70, () => {
+    assert.equal(root.hidden, false, 'The focus/text callback runs only after the surface becomes visible');
+    assert.equal(root.dataset.transition, 'opening');
+    shown++;
+  });
+  const lead = root.animations.at(-1);
+  assert.deepEqual(lead.frames, [], 'The lead clock itself changes no opacity or transform');
+  assert.equal(lead.options.duration, 70);
+  lead.advance(69); await flushAnimations();
+  assert.equal(root.hidden, true);
+  assert.equal(shown, 0);
+  assert.equal(article.animations.length, 0, 'Text and movement wait together');
+  lead.advance(1); await flushAnimations();
+  assert.equal(shown, 1);
+  const opening = root.animations.at(-1), movement = article.animations.at(-1);
+  assert.equal(opening.options.duration, 360);
+  assert.equal(movement.options.duration, 360);
+  assert.equal(opening.frames[0].opacity, '0');
+  assert.equal(movement.frames[0].transform, 'translateX(24px)');
+  opening.advance(359); await flushAnimations();
+  assert.equal(root.dataset.transition, 'opening');
+  opening.advance(1); await flushAnimations();
+  assert.equal(root.dataset.transition, 'open');
+  assert.equal(shown, 1, 'The entrance completion does not rerun focus/decryption');
+  transition.hide(false);
+  const closing = root.animations.at(-1);
+  assert.equal(closing.options.duration, 240);
+  closing.advance(239); await flushAnimations();
+  assert.equal(root.hidden, false);
+  closing.advance(1); await flushAnimations();
+  assert.equal(root.hidden, true);
+});
+
+test('Esc before the text lead ends cancels it and returns the camera without a late menu', async (t) => {
+  const { root, transition } = delayedSurface(t);
+  const f = fixture();
+  let shown = 0;
+  f.ports.showMenu = () => transition.show(false, 70, () => shown++);
+  f.ports.hideMenu = (done) => transition.hide(false, done);
+  f.openDetail();
+  const lead = root.animations.at(-1);
+  lead.advance(30);
+  f.motion.back();
+  assert.equal(root.hidden, true);
+  assert.equal(f.motion.phase, 'returning');
+  assert.equal(f.events.at(-1), 'camera:return');
+  lead.finish(); await flushAnimations();
+  assert.equal(shown, 0);
+  assert.equal(root.hidden, true);
+  f.ready.archive = true;
+  f.motion.update();
+  assert.equal(f.motion.phase, 'archive');
+});
+
+test('replay hide(true), disposal and repeated show invalidate queued lead callbacks', async (t) => {
+  const { root, transition } = delayedSurface(t);
+  let oldShown = 0, currentShown = 0;
+  transition.show(false, 70, () => oldShown++);
+  const replayLead = root.animations.at(-1);
+  replayLead.finish(); // Its success microtask is queued before replay cancels it.
+  transition.hide(true);
+  await flushAnimations();
+  assert.equal(oldShown, 0);
+  assert.equal(root.hidden, true);
+  transition.show(false, 70, () => oldShown++);
+  const firstLead = root.animations.at(-1);
+  firstLead.finish();
+  transition.show(false, 70, () => currentShown++);
+  const replacementLead = root.animations.at(-1);
+  await flushAnimations();
+  assert.equal(oldShown, 0);
+  assert.equal(currentShown, 0);
+  assert.equal(root.hidden, true);
+  replacementLead.finish(); await flushAnimations();
+  assert.equal(currentShown, 1);
+  transition.hide(true);
+  transition.show(false, 70, () => oldShown++);
+  const disposedLead = root.animations.at(-1);
+  disposedLead.finish();
+  transition.dispose();
+  await flushAnimations();
+  assert.equal(oldShown, 0);
+  assert.equal(root.hidden, true);
+});
+
+test('speed edits retime the 70ms lead in place and transfer the current speed to the entrance', async (t) => {
+  const { root, transition } = delayedSurface(t);
+  setMusicMotionSpeed(0.25);
+  let shown = 0;
+  transition.show(false, 70, () => shown++);
+  const lead = root.animations.at(-1);
+  assert.equal(lead.playbackRate, 0.25);
+  lead.advance(100); await flushAnimations();
+  assert.equal(lead.currentTime, 25);
+  assert.equal(root.hidden, true);
+  setMusicMotionSpeed(3);
+  assert.equal(lead.currentTime, 25, 'Speed changes retain elapsed lead time');
+  assert.equal(lead.playbackRate, 3);
+  lead.advance(14); await flushAnimations();
+  assert.equal(shown, 0);
+  lead.advance(1); await flushAnimations();
+  assert.equal(shown, 1);
+  const opening = root.animations.at(-1);
+  assert.equal(opening.options.duration, 360);
+  assert.equal(opening.playbackRate, 3);
+  setMusicMotionSpeed(0.5);
+  assert.equal(lead.playbackRate, 3, 'The completed lead releases its speed subscription');
+  assert.equal(opening.playbackRate, 0.5);
+});
+
+test('finish during a lead reveals immediately with one callback and no later 360ms animation', async (t) => {
+  const { root, article, transition } = delayedSurface(t);
+  let shown = 0;
+  transition.show(false, 70, () => {
+    shown++;
+    assert.equal(root.hidden, false);
+    assert.equal(root.dataset.transition, 'open');
+  });
+  const lead = root.animations.at(-1);
+  lead.advance(20);
+  transition.finish();
+  assert.equal(shown, 1);
+  assert.equal(root.animations.length, 1, 'Live reduced motion finishes without creating an entrance animation');
+  assert.equal(article.animations.length, 0);
+  lead.finish(); await flushAnimations();
+  assert.equal(shown, 1);
+  transition.hide(true);
+  transition.show(true, 70, () => shown++);
+  assert.equal(shown, 2, 'An already-reduced request bypasses the lead synchronously');
+  assert.equal(root.dataset.transition, 'open');
+  assert.equal(root.animations.length, 1);
+});
+
+test('production showMenu delays only landscape daylight and starts text, focus and accessibility together', async (t) => {
+  const originalComputedStyle = globalThis.getComputedStyle;
+  globalThis.getComputedStyle = (element) => element;
+  setMusicMotionSpeed(1);
+  t.after(() => { setMusicMotionSpeed(1); globalThis.getComputedStyle = originalComputedStyle; });
+  const source = await readFile(new URL('../src/music-app.ts', import.meta.url), 'utf8');
+  const file = ts.createSourceFile('music-app.ts', source, ts.ScriptTarget.Latest, true);
+  let hook;
+  const visit = (node) => {
+    if (ts.isPropertyAssignment(node) && node.name.getText(file) === 'showMenu') hook = node.initializer;
+    ts.forEachChild(node, visit);
+  };
+  visit(file);
+  assert.ok(hook, 'Exercise the real app port rather than duplicating its theme/layout condition');
+  const { outputText } = ts.transpileModule(`const showMenu = ${hook.getText(file)};`, {
+    compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext },
+  });
+  const bindHook = new Function('bindings', `
+    const { $, stage, detailTransition, preferences, syncDetailAlignment, panel, documentDecryption } = bindings;
+    let pendingDetailFocus = false;
+    ${outputText}
+    return { invoke: showMenu, pendingFocus: () => pendingDetailFocus };
+  `);
+  for (const theme of ['day', 'night', 'dusk']) for (const layout of ['desktop', 'compact', 'portrait']) {
+    for (const reduced of [false, true]) {
+      const root = animationElement(true), article = animationElement();
+      const transition = new SurfaceTransition(root, article, 360, 240, 'right');
+      const attributes = { 'aria-hidden': 'true' }, calls = [];
+      root.inert = true;
+      root.setAttribute = (name, value) => { attributes[name] = value; };
+      article.inert = true;
+      article.scrollTop = 42;
+      const stage = { dataset: { theme, layout, dayReading: 'pending' } };
+      const port = bindHook({
+        $: (selector) => selector === '#music-detail' ? root : article,
+        stage, detailTransition: transition, preferences: { reduced }, panel: null,
+        syncDetailAlignment: () => calls.push('alignment'),
+        documentDecryption: { reset: (content, setting) => {
+          assert.equal(content, article); assert.equal(setting, reduced); calls.push('decryption');
+        } },
+      });
+      port.invoke();
+      assert.equal(stage.dataset.dayReading, 'ready', 'Reading field begins after camera readiness invokes the port');
+      if (theme === 'day' && layout !== 'portrait' && !reduced) {
+        assert.equal(root.hidden, true);
+        assert.equal(root.inert, true);
+        assert.equal(attributes['aria-hidden'], 'true');
+        assert.equal(article.scrollTop, 42);
+        assert.deepEqual(calls, []);
+        assert.equal(port.pendingFocus(), false, 'Hidden detail is never focused or decrypted during the lead');
+        root.animations.at(-1).advance(70);
+        await flushAnimations();
+      }
+      assert.equal(root.hidden, false, `${theme}/${layout}/reduced=${reduced} shows at its intended time`);
+      assert.equal(root.inert, false);
+      assert.equal(attributes['aria-hidden'], 'false');
+      assert.equal(article.inert, false);
+      assert.equal(article.scrollTop, 0);
+      assert.deepEqual(calls, ['alignment', 'decryption']);
+      assert.equal(port.pendingFocus(), true);
+      if (!reduced) assert.equal(root.animations.at(-1).options.duration, 360);
+      transition.dispose();
+    }
+  }
+});
 
 test('production menu transition moves right and fades before switching the detail album', async (t) => {
   const originalComputedStyle = globalThis.getComputedStyle;

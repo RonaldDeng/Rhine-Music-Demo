@@ -1,0 +1,33 @@
+.introduction-ai { margin-top: 24px; border-top: 1px solid var(--line); padding-top: 22px; scroll-margin-top: 18px; }
+.music-panel:has(.introduction-ai) { scrollbar-color: var(--muted) var(--surface); }
+.introduction-ai h4 { font-size: 14px; font-weight: 500; margin: 0 0 10px; }
+.introduction-ai h4 > small { color: var(--muted); font-size: 9px; border: 1px solid var(--line); padding: 2px 5px; margin-left: 8px; }
+.introduction-ai-steps { margin: 20px 0; padding-left: 22px; }
+.introduction-ai-steps > li { margin: 0 0 24px; padding-left: 5px; }
+.introduction-ai-steps > li::marker { color: var(--muted); font-size: 10px; }
+.introduction-ai-steps strong { font-size: 12px; font-weight: 500; }
+.introduction-ai .settings-row { flex-wrap: wrap; gap: 10px; }
+.introduction-ai .settings-row select { max-width: 100%; }
+.introduction-ai [data-intro-batch-number] { width: 72px; padding: 7px 8px; color: var(--ink); background: var(--surface); border: 1px solid var(--line); font: inherit; }
+.introduction-ai-file { display: block; font-size: 11px; margin-bottom: 12px; }
+.introduction-ai-file input { display: block; max-width: 100%; margin-top: 9px; font-size: 10px; color: var(--muted); }
+.introduction-ai-file input::file-selector-button { padding: 7px 10px; margin-right: 10px; background: var(--surface); color: var(--ink); border: 1px solid var(--line); cursor: pointer; }
+.introduction-ai textarea { display: block; width: 100%; box-sizing: border-box; resize: vertical; min-height: 100px; max-height: 320px; padding: 10px; font: 11px/1.6 monospace; color: var(--ink); background: var(--surface); border: 1px solid var(--line); }
+.introduction-ai-status { white-space: pre-line; overflow-wrap: anywhere; }
+.introduction-ai-entries { max-height: 420px; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; scrollbar-width: thin; }
+.introduction-ai-entries details { padding: 12px 0; border-top: 1px solid var(--line); }
+.introduction-ai-entries summary { cursor: pointer; font-size: 12px; overflow-wrap: anywhere; }
+.introduction-ai-entries summary > span { color: var(--accent); margin-right: 8px; }
+.introduction-ai-entries summary small { display: block; color: var(--muted); margin: 5px 0 0 20px; font-size: 10px; }
+.introduction-ai-copy { white-space: pre-line; overflow-wrap: anywhere; font-size: 12px; line-height: 1.9; }
+.introduction-ai-existing { margin: 16px 0; padding: 10px 12px; background: var(--surface); border-left: 2px solid var(--line); }
+.introduction-ai-entries small { color: var(--muted); font-size: 10px; }
+.introduction-ai [data-intro-apply] { margin-top: 18px; }
+.introduction-sources { list-style: none; padding: 0; margin: 18px 0; }
+.introduction-sources li { margin: 10px 0; font-size: 11px; line-height: 1.7; overflow-wrap: anywhere; }
+.introduction-sources small { display: block; color: var(--muted); font-size: 9px; }
+.introduction-origin { color: var(--muted); font-size: 10px !important; }
+.introduction-encyclopedia { margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--line); }
+.introduction-encyclopedia > summary { cursor: pointer; font-size: 12px; }
+.introduction-actions { display: flex; flex-wrap: wrap; gap: 10px 20px; }
+.introduction-ai button:disabled { opacity: .45; cursor: default; }

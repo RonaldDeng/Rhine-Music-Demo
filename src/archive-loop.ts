@@ -8,7 +8,9 @@ export type ArchiveNavigation =
 
 export const LOOP_COLUMNS = 9;
 export const LOOP_ROWS = 32;
-export const MUSIC_LOOP_ROWS = 48;
+// Twenty additional shelf positions extend the previous 48-row music window
+// equally at both ends. The original archive and logical album rows stay fixed.
+export const MUSIC_LOOP_ROWS = 68;
 export const COLUMN_SPACING = 5.2;
 export const ROW_SPACING = 0.62;
 const POOL_LANES = [0, 1, 2, 3, 4, -2, -1, 5, 6];

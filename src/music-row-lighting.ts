@@ -1,9 +1,13 @@
+import { musicIntroLightRow } from "./music-intro-motion.ts";
+import { MUSIC_COLUMN_SPACING } from "./music-model.ts";
+
 /** V0.3.1: a world-space shelf ribbon. Width is its full width at half maximum,
  * measured in archive rows, not screen pixels or the height of a CD case. */
 export type RowLightingMode = "baseline" | "area" | "guided" | "hybrid";
 export type RowLightingSettings = {
   mode: RowLightingMode;
   strength: number;
+  dayGain: number;
   width: number;
   offset: number;
   fill: number;
@@ -45,34 +49,26 @@ export function followRowLight(state: RowLightMotion, target: number, dt: number
   return state.value;
 }
 
-/** One opening pass and return, timed to the existing array wave. End at rest
- * before the intro hands control to navigation; never run during normal input. */
-export function introRowOffset(time: number) {
-  const ease = (value: number) => {
-    const t = Math.max(0, Math.min(1, value));
-    return t * t * t * (10 + t * (-15 + 6 * t));
-  };
-  return time < 24.15
-    ? -9 + 27 * ease((time - 22.2) / 1.95)
-    : 18 * (1 - ease((time - 24.15) / 1.6));
-}
+/** The opening scan shares the new edit's clock. It remains a common scanning
+ * ribbon across columns; column height waves have their own delayed clocks. */
+export const introRowOffset = musicIntroLightRow;
 
 export const ROW_LIGHTING = {
   rowSpacing: 0.62,
-  laneSpacing: 5.2,
+  laneSpacing: MUSIC_COLUMN_SPACING,
   laneRadius: 27,
   gaussianHalfMaximum: Math.LN2,
   modes: { baseline: 0, area: 1, guided: 2, hybrid: 3 },
 } as const;
 
 export const DEFAULT_ROW_LIGHTING: Readonly<RowLightingSettings> = {
-  mode: "baseline", strength: 1, width: 1, offset: 0, fill: 1, transitionDuration: 1.2,
+  mode: "baseline", strength: 1, dayGain: 11, width: 1, offset: 0, fill: 1, transitionDuration: 1.2,
 };
 
 /** User-approved V0.3.1 preset, shared by first use and the reset control.
  * Keep the unconfigured controller above neutral for the original comparison. */
 export const DEFAULT_LIGHTING_PRESET: Readonly<RowLightingSettings> = {
-  mode: "guided", strength: 1.3, width: 1.35, offset: 0.3, fill: 1, transitionDuration: 1.1,
+  mode: "guided", strength: 1.3, dayGain: 11, width: 1.35, offset: 0.3, fill: 1, transitionDuration: 1.1,
 };
 
 export function normalizeRowLighting(
@@ -84,6 +80,7 @@ export function normalizeRowLighting(
   return {
     mode: value.mode && Object.hasOwn(ROW_LIGHTING.modes, value.mode) ? value.mode : previous.mode,
     strength: number(value.strength, previous.strength, 0, 2),
+    dayGain: number(value.dayGain, previous.dayGain ?? 11, 0, 20),
     width: number(value.width, previous.width, 0.6, 2.5),
     offset: number(value.offset, previous.offset, -6, 6),
     fill: number(value.fill, previous.fill, 0, 1),

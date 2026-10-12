@@ -3,8 +3,8 @@ import fs from 'node:fs';
 import ts from 'typescript';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { COLUMN_SPACING, ROW_SPACING, LOOP_COLUMNS, LOOP_ROWS, visibleCell } from '../src/archive-loop.ts';
-import { MUSIC_MODEL, normalizeMusicGeometry, createAlbumPrintMaterial } from '../src/music-model.ts';
+import { ROW_SPACING, LOOP_COLUMNS, LOOP_ROWS, visibleCell } from '../src/archive-loop.ts';
+import { MUSIC_MODEL, MUSIC_COLUMN_GAP, MUSIC_COLUMN_SPACING as COLUMN_SPACING, normalizeMusicGeometry, createAlbumPrintMaterial } from '../src/music-model.ts';
 import { MUSIC_CD_ASSET } from '../src/music-cd-asset.ts';
 
 // Resolve every production import, including the shared theme transition.
@@ -32,17 +32,17 @@ function setup() {
   return {light,model,camera,shader,column:shader.uniforms.musicLightColumn.value};
 }
 const a=setup(), b=setup();
-a.model.position.x=b.model.position.x=5.2;
+a.model.position.x=b.model.position.x=COLUMN_SPACING;
 a.light.update(a.model,a.camera,.1,true,false);
 assert.ok(a.column.x>0 && a.column.x<.5,'Light begins gradually with the lift');
 for(let i=0;i<12;i++)b.light.update(b.model,b.camera,1/120,true,false);
 assert.ok(a.column.distanceTo(b.column)<1e-9,'Light transition is independent of frame rate');
 const before=a.column.clone();
-a.model.position.x=-5.2;
+a.model.position.x=-COLUMN_SPACING;
 a.light.update(a.model,a.camera,1/60,true,false);
 assert.ok(a.column.distanceTo(before)<.2,'Rapid reversal preserves position and velocity continuity');
 a.light.update(a.model,a.camera,0,true,true);
-assert.equal(a.column.x,-5.2,'Reduced motion snaps to the selected location');
+assert.equal(a.column.x,-COLUMN_SPACING,'Reduced motion snaps to the selected location');
 // Use the actual shell bounds and complete instance pool, including its hidden
 // margins. A source inside this volume can burn a corner even when the selected
 // CD itself has the desired exposure; checking only source-to-target misses it.
@@ -50,6 +50,9 @@ const glb = fs.readFileSync(new URL(`../public/${MUSIC_CD_ASSET.split('?')[0]}`,
 const asset = await new GLTFLoader().parseAsync(glb.buffer.slice(glb.byteOffset, glb.byteOffset + glb.byteLength), '');
 asset.scene.traverse(object => { if (object instanceof THREE.Mesh) normalizeMusicGeometry(object.geometry); });
 const shellBounds = new THREE.Box3().setFromObject(asset.scene);
+const neighboringShell = shellBounds.clone().translate(new THREE.Vector3(COLUMN_SPACING, 0, 0));
+assert.ok(Math.abs(neighboringShell.min.x - shellBounds.max.x - MUSIC_COLUMN_GAP) < 1e-6,
+  'Actual neighboring CD meshes leave the intended clear inter-column gap');
 const shaderBounds = a.shader.uniforms.musicShellBounds.value;
 assert.ok(Math.abs(shaderBounds.x-shellBounds.min.x)<1e-6,'Warm spine begins at the actual transformed left glass edge');
 assert.ok(Math.abs(shaderBounds.y-shellBounds.min.y)<1e-6,'Height falloff begins at the inset bottom edge');
@@ -57,7 +60,8 @@ assert.ok(Math.abs(shaderBounds.z-shellBounds.max.y)<1e-6,'Top ribbon peaks at t
 assert.ok(Math.abs(1/shaderBounds.w-shellBounds.getSize(new THREE.Vector3()).y)<1e-6,'Light height follows the shortened glass panel');
 const falloff = a.shader.uniforms.musicEdgeFalloff.value;
 assert.ok(Math.log(2)/falloff.y<0.035,'Top ribbon half-brightness width stays below 0.035 model units');
-assert.ok(Math.exp(-MUSIC_MODEL.width*falloff.x)<0.001,'Warm spine transport decays before crossing the entire panel');
+assert.equal(falloff.x,1.7,'Narrowing the case preserves the established physical light falloff');
+assert.ok(Math.exp(-MUSIC_MODEL.width*falloff.x)<0.002,'Warm spine transport falls below 0.2% before crossing the narrower panel');
 assert.ok(a.shader.fragmentShader.includes('vMusicLocal.x - musicShellBounds.x') && a.shader.fragmentShader.includes('musicShellBounds.z - vMusicLocal.y'),'The material shader consumes the geometry bounds for both highlighted edges');
 const localAim = a.light.spot.target.position.clone().sub(a.model.position);
 assert.ok(localAim.x>shellBounds.min.x && localAim.x<shellBounds.min.x+0.3,'Spot target tracks the thin left glass frame');
@@ -109,7 +113,7 @@ assert.equal(a.light.spot.distance,0,'Far source must not extinguish the shelf a
 // The authored opening already eases its large track movement. The light must
 // travel with that track on every frame, including a replay after live browsing.
 const opening = setup();
-opening.model.position.set(5.2,-4.6,-23);
+opening.model.position.set(COLUMN_SPACING,-4.6,-23);
 opening.light.update(opening.model,opening.camera,1/60,true,false,true);
 assert.ok(opening.column.distanceTo(opening.model.position)<1e-10,'Opening immediately anchors its light field to the entering array');
 for(const displacement of [[0,.1,3],[0,.5,7],[0,-.2,8],[0,0,5]]) {
@@ -123,7 +127,7 @@ for(const displacement of [[0,.1,3],[0,.5,7],[0,-.2,8],[0,0,5]]) {
 opening.model.position.x += COLUMN_SPACING;
 opening.light.update(opening.model,opening.camera,.1,true,false);
 assert.ok(opening.column.distanceTo(opening.model.position)>1,'Live browsing resumes its smooth handoff after opening');
-opening.model.position.set(-5.2,-4.6,-23);
+opening.model.position.set(-COLUMN_SPACING,-4.6,-23);
 opening.light.update(opening.model,opening.camera,1/60,true,false,true);
 assert.ok(opening.column.distanceTo(opening.model.position)<1e-10,'Replay discards the previous browsing anchor and velocity');
 const replayTarget = opening.light.spot.target.position.clone();
@@ -133,4 +137,4 @@ assert.ok(opening.light.spot.target.position.distanceTo(replayTarget)<1e-10,'A c
 a.light.update(a.model,a.camera,0,false,false);
 assert.equal(a.light.spot.visible,false);
 assert.equal(a.light.spot.castShadow,false);
-console.log(`Music lighting passed: actual 4.45×3.35 shell edge alignment, narrow warm ribbon, unchanged cover shader, gradual start, frame-rate independence, rapid reversal, reduced motion, lower-left direction, neighboring-column cone coverage, full-pool clearance ${minimumClearance.toFixed(2)}, cinematic track/replay anchoring, empty-library disable.`);
+console.log(`Music lighting passed: actual ${MUSIC_MODEL.width}×${MUSIC_MODEL.height} shell edge alignment, narrow warm ribbon, unchanged cover shader, gradual start, frame-rate independence, rapid reversal, reduced motion, lower-left direction, neighboring-column cone coverage, full-pool clearance ${minimumClearance.toFixed(2)}, cinematic track/replay anchoring, empty-library disable.`);

@@ -1,10 +1,10 @@
 import { getMusicMotionSpeed, onMusicMotionSpeedChange } from "./music-motion-settings";
 
 /** Keep a base-duration WAAPI animation continuous when the speed changes. */
-export function followMusicMotionSpeed(animation: Animation) {
-  animation.playbackRate = getMusicMotionSpeed();
+export function followMusicMotionSpeed(animation: Animation, rate: () => number = () => 1) {
+  animation.playbackRate = getMusicMotionSpeed() * rate();
   const unsubscribe = onMusicMotionSpeedChange((speed) => {
-    animation.updatePlaybackRate(speed);
+    animation.updatePlaybackRate(speed * rate());
   });
   void animation.finished.then(unsubscribe, unsubscribe);
   return animation;

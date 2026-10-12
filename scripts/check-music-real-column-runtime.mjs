@@ -8,7 +8,8 @@ import * as data from '../src/data.ts';
 import { MusicRealColumns } from '../src/music-real-columns.ts';
 import { isRealAlbumCell } from '../src/music-array-layout.ts';
 import { musicOverviewColumnExtent } from '../src/music-overview-edge.ts';
-import { MUSIC_MODEL } from '../src/music-model.ts';
+import { MUSIC_MODEL, MUSIC_COLUMN_SPACING } from '../src/music-model.ts';
+import { MusicOverviewMotion } from '../src/music-overview.ts';
 
 // Execute production field, pool and matrix updates with actual Three objects.
 // Material uploads and rendering are replaced; world transforms, cover slot IDs
@@ -25,6 +26,9 @@ const methods = methodNames.map(name => {
 });
 const update = klass.members.find(node => ts.isMethodDeclaration(node) && node.name.getText(tree) === 'update');
 const statements = [...update.body.statements];
+const extractionScale = statements.find(node => ts.isVariableStatement(node) &&
+  node.declarationList.declarations.some(declaration => declaration.name.getText(tree) === 'extractionScale'));
+assert.ok(extractionScale, 'Production overview extraction shares the camera progress');
 const pool = statements.find(node => ts.isForStatement(node) && node.getText(tree).includes('this.cells[i] ='));
 const outgoing = statements.find(node => ts.isForStatement(node) && node.getText(tree).includes('this.outgoing.length - 1'));
 const hidden = statements.findIndex(node => ts.isVariableStatement(node) &&
@@ -37,10 +41,12 @@ const easeNode = tree.statements.find(node => ts.isVariableStatement(node) &&
 const compiled = ts.transpileModule(`
   ${easeNode.getText(tree)}
   return { ${methods.join(',\n')},
-    render(dt, time) {
-      const cinematic = undefined, musicIntro = false, detailNavigation = false, detail = 0, entryZ = 0;
+    render(dt, time, cinematic = undefined) {
+      const musicIntro = false, detailNavigation = false, detail = 0, entryZ = 0;
+      const overview = this.musicOverview.value;
+      ${extractionScale.getText(tree)}
       const trackX = this.columnCamera.value;
-      const center = { lane: trackX / COLUMN_SPACING + 2, row: this.musicBrowseRow };
+      const center = { lane: trackX / this.columnSpacing + 2, row: this.musicBrowseRow };
       const selectedRow = this.selectedCell.row, selectedLane = this.selectedCell.lane;
       const chosen = this.cellPosition(this.selectedCell);
       const field = (row, lane) => this.musicRealColumnField(row, lane, time);
@@ -69,7 +75,7 @@ function fixture(selectedRow = 12) {
     MUSIC_ALBUM_SWITCH_RATE: 9 };
   const methods = new Function(...Object.keys(deps), compiled)(...Object.values(deps));
   const host = {
-    ...methods, loaded: true, looping: true, reduced: false, musicArrayMode: 'realistic',
+    ...methods, columnSpacing: MUSIC_COLUMN_SPACING, loaded: true, looping: true, reduced: false, musicArrayMode: 'realistic',
     musicColumnCounts: counts, musicOverview: { value: 0 }, musicRealColumns: new MusicRealColumns(),
     selectedCell: { lane: 2, row: selectedRow }, coordinateOrigin: { lane: 0, row: 0 },
     poolRows: loop.MUSIC_LOOP_ROWS, cells: Array.from({ length: count }, (_, i) => loop.poolCell(i, loop.MUSIC_LOOP_ROWS)),
@@ -92,9 +98,76 @@ function fixture(selectedRow = 12) {
     const insert = new THREE.Matrix4(); cover.getMatrixAt(i, insert);
     assert.deepEqual(insert.elements, matrix.elements, 'Cover and shell receive the identical production matrix');
     assert.equal(host.coverIds[i], data.records[loop.fileAtCell(cell)]?.id, 'Cover ID follows the same logical cell as its matrix');
+    if (matrix.elements[0] !== 0) close(matrix.elements[12],
+      (cell.lane - 2) * MUSIC_COLUMN_SPACING - host.columnCamera.value,
+      'Rendered shell and cover centers use the current music-column spacing');
     return [[loop.cellKey(cell), { matrix, index: i, cell }]];
   }));
   return { host, counts, matrices, shell };
+}
+
+// Measure the production selected/copy transforms, not only a desired lift
+// target. A wide-array selection must occupy exactly the slot its instanced
+// counterpart will own, and recover the normal preview on the camera clock.
+{
+  const f = fixture(60), host = f.host, time = 2;
+  const selected = { ...host.selectedCell };
+  const baseY = () => host.cellPosition(host.selectedCell).y +
+    host.musicRealColumnField(host.selectedCell.row, host.selectedCell.lane, time);
+  for (const progress of [0, .2, .5, 1, .8, .35, 0]) {
+    host.musicOverview.value = progress;
+    host.render(0, time);
+    close(host.model.position.y - baseY(), .9 * (1 - progress),
+      'Visible extraction follows overview progress through entry, reversal and return');
+    assert.deepEqual(host.lift, { value: .9, velocity: 0 },
+      'Overview rendering cannot reset the existing preview/inspection lift spring');
+  }
+  host.musicOverview.value = 1;
+  host.render(0, time); host.model.updateMatrix();
+  const selectedMatrix = host.model.matrix.clone();
+  host.selectedCell = { lane: selected.lane, row: selected.row + 1 };
+  host.render(0, time);
+  const arrayMatrix = f.matrices().get(loop.cellKey(selected)).matrix;
+  selectedMatrix.elements.forEach((value, index) => close(arrayMatrix.elements[index], value,
+    'At full overview the formerly selected album has exactly the array position and tilt'));
+  host.selectedCell = selected;
+  const old = { group: new THREE.Group(), cell: { lane: selected.lane, row: selected.row - 1 }, slot: 0,
+    lift: { value: .7, velocity: 0 }, returnY: null, clarity: 0 };
+  host.outgoing.push(old); host.scene.add(old.group);
+  host.render(0, time); old.group.updateMatrix();
+  const outgoingMatrix = old.group.matrix.clone();
+  old.lift.value = 0; host.render(0, time);
+  const restoredMatrix = f.matrices().get(loop.cellKey(old.cell)).matrix;
+  outgoingMatrix.elements.forEach((value, index) => close(restoredMatrix.elements[index], value,
+    'A previous selection cannot pop out while its copy retires inside overview'));
+  for (const lift of [.4, .9, 3.85]) {
+    host.lift.value = lift;
+    host.render(0, time, { musicIntro: true });
+    close(host.model.position.y - baseY(), lift,
+      'Cinematic/intro extraction remains authored even if overview state was previously nonzero');
+    host.musicOverview.value = 0; host.render(0, time);
+    close(host.model.position.y - baseY(), lift,
+      'Normal preview and inspection extraction remain unchanged outside overview');
+    host.musicOverview.value = 1;
+  }
+}
+for (const hz of [30, 60, 120]) for (const speed of [.25, 1, 3]) {
+  const host = fixture(60).host, motion = new MusicOverviewMotion();
+  host.musicOverview.value = 1; motion.active = true; motion.update(0, true);
+  motion.active = false;
+  let previousLift = 0;
+  for (let frame = 0; frame < Math.ceil(2 * hz / speed); frame++) {
+    host.musicOverview.value = motion.update(speed / hz, false);
+    host.render(0, 2);
+    const baseY = host.cellPosition(host.selectedCell).y +
+      host.musicRealColumnField(host.selectedCell.row, host.selectedCell.lane, 2);
+    const lift = host.model.position.y - baseY;
+    close(lift, .9 * (1 - motion.value), 'Rendered extraction stays on the real overview clock at every speed/frame rate');
+    assert.ok(lift >= previousLift - 1e-9 && lift <= .9 + 1e-9,
+      'Returning from overview restores preview extraction without a rebound or overshoot');
+    previousLift = lift;
+  }
+  assert.ok(previousLift > .899, 'The normal preview height is fully restored after the return');
 }
 
 const baseline = fixture(), moving = fixture();
@@ -158,18 +231,18 @@ for (const { matrix, cell } of centeredAgain.values()) if (cell.lane === 2) {
     'The returned column relinquishes selected shoulders and ripples');
 }
 
-const orbitStatement = statements.find(node => ts.isVariableStatement(node) &&
-  node.declarationList.declarations.some(declaration => declaration.name.getText(tree) === 'navigationOrbit'));
-const orbitExpression = orbitStatement.declarationList.declarations[0].initializer.getText(tree);
-const orbitInputs = new Function('musicLibrary', 'cinematic', 'detail', 'dt', 'COLUMN_SPACING', 'ROW_SPACING',
-  `return ${orbitExpression};`);
-moving.host.musicCamera = { navigation: (...args) => args };
+const elevationStatement = statements.find(node => ts.isVariableStatement(node) &&
+  node.declarationList.declarations.some(declaration => declaration.name.getText(tree) === 'navigationElevation'));
+const elevationExpression = elevationStatement.declarationList.declarations[0].initializer.getText(tree);
+const elevationInputs = new Function('musicLibrary', 'cinematic', 'detail', 'dt', 'ROW_SPACING',
+  `return ${elevationExpression};`);
+moving.host.musicCamera = { navigationElevation: (...args) => args };
 moving.host.rail.velocity = 20;
-const finiteInputs = orbitInputs.call(moving.host, true, undefined, 0, .016, loop.COLUMN_SPACING, loop.ROW_SPACING);
-assert.equal(finiteInputs[1], 0, 'Independent column scrolling cannot tilt the shared archive camera');
+const finiteInputs = elevationInputs.call(moving.host, true, undefined, 0, .016, loop.ROW_SPACING);
+assert.equal(finiteInputs[0], 0, 'Independent column scrolling cannot tilt the shared archive camera');
 moving.host.musicArrayMode = 'filled';
-const filledInputs = orbitInputs.call(moving.host, true, undefined, 0, .016, loop.COLUMN_SPACING, loop.ROW_SPACING);
-assert.equal(filledInputs[1], 20 / loop.ROW_SPACING, 'Filled-array navigation retains its previous camera response');
+const filledInputs = elevationInputs.call(moving.host, true, undefined, 0, .016, loop.ROW_SPACING);
+assert.equal(filledInputs[0], 20 / loop.ROW_SPACING, 'Filled-array navigation retains its previous camera response');
 
 // Returning copies use the same column transform and hand ownership back to
 // the array on the same frame; no old/global-rail position may leak through.
@@ -190,4 +263,4 @@ close(restored.elements[12], copy.group.position.x, 'Outgoing and restored insta
 close(restored.elements[13], copy.group.position.y, 'Outgoing and restored instance Y agree');
 close(restored.elements[14], copy.group.position.z, 'Outgoing and restored instance Z agree');
 
-console.log('Real-column runtime passed: production pool/matrix paths, independent global-rail cancellation, idle-only neighbours, continuous column handoff/recentering, long/short identities, exact shell/cover transforms, actual raycast identity, returning-copy ownership and camera isolation. GPU pixels and browser interaction are verified separately.');
+console.log('Real-column runtime passed: production pool/matrix paths, overview selection/copy extraction on the shared camera clock at 30/60/120 fps and .25/1/3 speed, unchanged cinematic/normal extraction, independent global-rail cancellation, idle-only neighbours, continuous column handoff/recentering, long/short identities, exact shell/cover transforms, actual raycast identity, returning-copy ownership and camera isolation. GPU pixels and browser interaction are verified separately.');

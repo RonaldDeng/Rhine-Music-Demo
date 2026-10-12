@@ -24,10 +24,10 @@ function range(
 ) {
   return `<label class="quality-control quality-range"><span>${label}<small>${hint}</small></span><div><input type="range" data-quality="${key}" aria-label="${label}" min="${min}" max="${max}" step="5" value="${quality[key]}"/><output data-quality-output="${key}">${quality[key]}%</output></div></label>`;
 }
-export function qualityMarkup(quality: RenderQuality) {
+export function qualityMarkup(quality: RenderQuality, music = false) {
   const preset = matchingPreset(quality);
   return `<section class="quality-settings" aria-label="画质设置">
-    <div class="quality-heading"><h3>RENDER QUALITY <span>渲染画质</span></h3><select id="quality-preset" aria-label="画质预设">${(Object.keys(presetLabels) as QualityPreset[]).map((key) => `<option value="${key}" ${preset === key ? "selected" : ""}>${presetLabels[key]}</option>`).join("")}<option value="custom" disabled ${preset === "custom" ? "selected" : ""}>自定义</option></select></div>
+    <div class="quality-heading"><h3>${music ? "画质" : "RENDER QUALITY <span>渲染画质</span>"}</h3><select id="quality-preset" aria-label="画质预设">${(Object.keys(presetLabels) as QualityPreset[]).map((key) => `<option value="${key}" ${preset === key ? "selected" : ""}>${presetLabels[key]}</option>`).join("")}<option value="custom" disabled ${preset === "custom" ? "selected" : ""}>自定义</option></select></div>
     <p class="quality-summary" id="quality-summary" aria-live="polite"></p>
     <details class="quality-advanced"><summary>精细设置 <span>清晰度 / 材质 / 阴影</span></summary><div class="quality-grid">
     ${range(quality, "scale", "渲染比例", "相对屏幕像素，受密度上限限制；高比例改善细线", 50, 200)}
@@ -88,7 +88,7 @@ export function qualityMarkup(quality: RenderQuality) {
       [0.5, 0.75, 1].map((v) => [v, `${v * 100}%`]),
     )}
     ${range(quality, "depthOfField", "景深强度 · 阵列", "0% 关闭；100% 保留原始镜头虚化", 0, 150)}
-    </div></details><p class="quality-note">即时生效并自动保存。清晰度与材质设置同步至 360° 查看器。高渲染比例更适合静态观察；缓冲上限为 829 万像素，硬件限制时自动收敛。</p>
+    </div>${music ? '<p class="quality-note">清晰度与材质设置同步至 360° 查看器。渲染比例越高，性能开销越大。缓冲上限为 829 万像素，超过硬件限制时会自动降低。</p>' : ""}</details><p class="quality-note">${music ? "调整立即生效并自动保存。" : "即时生效并自动保存。清晰度与材质设置同步至 360° 查看器。高渲染比例更适合静态观察；缓冲上限为 829 万像素，硬件限制时自动收敛。"}</p>
   </section>`;
 }
 

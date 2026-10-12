@@ -1,0 +1,155 @@
+{
+  "version": "0.4.3",
+  "generator": "art/build-music-case.mjs",
+  "units": "scene units",
+  "dimensions": {
+    "width": 3.996,
+    "height": 3.35,
+    "depth": 0.14,
+    "center": {
+      "x": 0,
+      "y": 1.85,
+      "z": 0
+    }
+  },
+  "widths": {
+    "spine": 0.2690697674418605,
+    "glass": 3.7269302325581393
+  },
+  "cover": {
+    "width": 2.98,
+    "height": 2.98,
+    "x": 0.14,
+    "y": 1.85,
+    "z": 0.027
+  },
+  "layers": {
+    "rearFront": -0.032,
+    "print": 0.027,
+    "lidBack": 0.052,
+    "lidFront": 0.07,
+    "spineRight": -1.7289302325581395
+  },
+  "construction": [
+    {
+      "name": "Thin frosted lid",
+      "surface": "Frosted_Polymer",
+      "center": [
+        0.13453488372093025,
+        1.85,
+        0.061
+      ],
+      "size": [
+        3.7269302325581393,
+        3.35,
+        0.018
+      ],
+      "radius": 0.028,
+      "bevel": 0.004
+    },
+    {
+      "name": "High-frost binding spine",
+      "surface": "Ivory_Edges",
+      "center": [
+        -1.8634651162790696,
+        1.85,
+        0
+      ],
+      "size": [
+        0.2690697674418605,
+        3.35,
+        0.14
+      ],
+      "radius": 0.034,
+      "bevel": 0.009
+    },
+    {
+      "name": "Spine shoulder",
+      "surface": "Ivory_Edges",
+      "center": [
+        -1.7379302325581394,
+        1.85,
+        0.015
+      ],
+      "size": [
+        0.024,
+        3.24,
+        0.082
+      ],
+      "radius": 0.01,
+      "bevel": 0.003
+    },
+    {
+      "name": "Rear tray",
+      "surface": "Optical_Diffuser",
+      "center": [
+        0.13453488372093025,
+        1.85,
+        -0.05
+      ],
+      "size": [
+        3.7269302325581393,
+        3.35,
+        0.036
+      ],
+      "radius": 0.028,
+      "bevel": 0.004
+    },
+    {
+      "name": "Open perimeter seat",
+      "surface": "Optical_Diffuser",
+      "center": [
+        0.13453488372093025,
+        1.85,
+        -0.003
+      ],
+      "size": [
+        3.7269302325581393,
+        3.35,
+        0.098
+      ],
+      "radius": 0.035,
+      "bevel": 0.004,
+      "hole": [
+        3.5769302325581394,
+        3.2
+      ]
+    },
+    {
+      "name": "Paper stop",
+      "surface": "Optical_Diffuser",
+      "center": [
+        0.13453488372093025,
+        0.242,
+        0.014
+      ],
+      "size": [
+        0.44,
+        0.026,
+        0.042
+      ],
+      "radius": 0.008,
+      "bevel": 0.003
+    },
+    {
+      "name": "Paper stop",
+      "surface": "Optical_Diffuser",
+      "center": [
+        0.13453488372093025,
+        3.458,
+        0.014
+      ],
+      "size": [
+        0.44,
+        0.026,
+        0.042
+      ],
+      "radius": 0.008,
+      "bevel": 0.003
+    }
+  ],
+  "meshes": 3,
+  "triangles": 1000,
+  "bytes": 78948,
+  "sha256": "f27162cdb5a3646303091a655c5a33b4190966d02de1634c60636056298dba7a"
+}

@@ -16,12 +16,15 @@ export class MusicOverviewMotion {
 
 export function overviewFraming(width: number, height: number) {
   const aspect = Math.max(1, width) / Math.max(1, height);
+  // Aim one physical column to the right, placing the unchanged selection left.
   // Show about five columns in landscape and three on narrow portrait screens.
-  return { span: Math.max(16.8, 17.5 / aspect), distance: 172, yaw: 28, elevation: 43 };
+  return { span: Math.max(16.8, 18.5 / aspect), distance: 172, yaw: 28, elevation: 43, aimColumns: 1 };
 }
 
 export interface OverviewColumn {
   lane: number;
+  /** World identity of a repeated column, stable across local coordinate rebases. */
+  physicalLane?: number;
   name: string;
   count: number;
   x: number;
@@ -29,32 +32,94 @@ export interface OverviewColumn {
   selected: boolean;
   /** Shared physical edge visibility; omitted by static projection fixtures. */
   extent?: number;
+  /** Remaining lane distance before this repeated physical copy is replaced. */
+  copyClearance?: number;
 }
 
-/** Cull labels near screen edges and collisions, prioritising the selected lane. */
+/** Geometry is fixed for the viewport, never derived from neighbouring columns. */
+export function overviewLabelMetrics(width: number) {
+  return { width: width < 600 ? 104 : 144, height: width < 600 ? 42 : 46, entry: 32, stem: 18 };
+}
+
+interface OverviewRect { left: number; right: number; top: number; bottom: number }
+export interface OverviewBounds { top: number; bottom: number; obstacles?: OverviewRect[] }
+
+function labelRects(column: OverviewColumn, width: number): OverviewRect[] {
+  const size = overviewLabelMetrics(width);
+  return [
+    { left: column.x - size.width / 2, right: column.x + size.width / 2 + size.entry,
+      top: column.y - size.height, bottom: column.y },
+    { left: column.x, right: column.x + 1, top: column.y, bottom: column.y + size.stem },
+  ];
+}
+function rectClearance(a: OverviewRect, b: OverviewRect) {
+  return Math.max(b.left - a.right, a.left - b.right, b.top - a.bottom, a.top - b.bottom);
+}
+
+/** Space around the complete card, reserved arrow and leader. */
+export function overviewBoundaryClearance(column: OverviewColumn, width: number, height: number,
+  bounds: OverviewBounds = { top: 115, bottom: height - 112 }) {
+  if (!Number.isFinite(column.x) || !Number.isFinite(column.y)) return -Infinity;
+  const size = overviewLabelMetrics(width);
+  let distance = Math.min(column.x - size.width / 2 - 12,
+    width - 12 - column.x - size.width / 2 - size.entry,
+    column.y - size.height - bounds.top, bounds.bottom - column.y - size.stem);
+  for (const obstacle of bounds.obstacles ?? []) for (const rect of labelRects(column, width))
+    distance = Math.min(distance, rectClearance(rect, obstacle) - 16);
+  return distance;
+}
+
+/** Binary emergency guard during exit, never a persistent opacity target. */
+export function overviewLabelOpacity(column: OverviewColumn, width: number, height: number,
+  bounds: OverviewBounds = { top: 115, bottom: height - 112 }) {
+  return Number((column.extent ?? 1) > 0 && overviewBoundaryClearance(column, width, height, bounds) > 0);
+}
+
+/** Positive separation of the complete reserved footprints, in CSS pixels. */
+export function overviewLabelClearance(a: OverviewColumn, b: OverviewColumn, width: number) {
+  // A leader is one pixel wide, not a full-width extension of the card.
+  // Using the enclosing rectangle needlessly hides ordinary diagonal neighbours.
+  return Math.min(...labelRects(a, width).flatMap(first =>
+    labelRects(b, width).map(second => rectClearance(first, second))));
+}
+
+export function overviewCollisionOpacity(a: OverviewColumn, b: OverviewColumn, width: number) {
+  return Number(overviewLabelClearance(a, b, width) > 0);
+}
+
+/** V0.4.1's single projection model: select labels, never relocate their anchors.
+ * Expanded/selected names come first; other retained names keep precedence.
+ * Geometry decides membership; only the finite card transition controls alpha.
+ * Distinct entry/exit thresholds prevent chatter without leaving faint names. */
 export function visibleOverviewLabels(columns: OverviewColumn[], width: number, height: number,
-  retained: ReadonlySet<number> = new Set(), expandedLane: number | null = null) {
-  const labelWidth = width < 600 ? 116 : 160;
+  retained: ReadonlySet<number> = new Set(), expandedLane: number | null = null,
+  bounds: OverviewBounds = { top: 115, bottom: height - 112 },
+  forecasts: ReadonlyMap<number, OverviewColumn>[] = []): OverviewColumn[] {
   const accepted: OverviewColumn[] = [];
-  for (const column of [...columns].sort((a, b) => Number(b.lane === expandedLane) - Number(a.lane === expandedLane) ||
+  const ordered = [...columns].sort((a, b) =>
+    Number(b.lane === expandedLane) - Number(a.lane === expandedLane) ||
     Number(b.selected) - Number(a.selected) ||
-    Math.abs(a.x - width / 2) - Math.abs(b.x - width / 2))) {
-    if ((column.extent ?? 1) <= (retained.has(column.lane) ? .06 : .12)) continue;
-    // A small exit buffer prevents a projected label from chattering at the
-    // same edge where it entered. Its retained node still follows the column.
-    const edge = retained.has(column.lane) ? -18 : 14;
-    // Every candidate reserves its future right-hand entry button. Opening it
-    // never shifts the artist name or suddenly culls the card that was clicked.
-    const rightEdge = retained.has(column.lane) ? 14 : 34;
-    if (column.x < labelWidth / 2 + edge || column.x > width - labelWidth / 2 - 76 - rightEdge ||
-      column.y < 115 - (retained.has(column.lane) ? 20 : 0) ||
-      column.y > height - 112 + (retained.has(column.lane) ? 20 : 0)) continue;
-    const left = column.x - labelWidth / 2, right = column.x + labelWidth / 2 +
-      (column.lane === expandedLane ? 76 : 0);
-    if (accepted.some((other) => left < other.x + labelWidth / 2 +
-      (other.lane === expandedLane ? 76 : 0) + 10 && right + 10 > other.x - labelWidth / 2 &&
-      Math.abs(other.y - column.y) < 62)) continue;
+    Number(retained.has(b.lane)) - Number(retained.has(a.lane)) ||
+    // Stable physical order for retained labels, independent of camera height.
+    (retained.has(a.lane) && retained.has(b.lane) ? a.lane - b.lane :
+      Number(b.selected) - Number(a.selected) || Math.abs(a.x - width / 2) - Math.abs(b.x - width / 2)));
+  for (const column of ordered) {
+    const keep = retained.has(column.lane);
+    // A folding pool-edge occurrence does not receive a detached name card.
+    if ((column.extent ?? 1) <= (keep ? .98 : .995)) continue;
+    if (overviewBoundaryClearance(column, width, height, bounds) <= (keep ? 4 : 8)) continue;
+    // Reserve the finite exit before contact, folding or a repeated-copy swap.
+    // Forecasts decide membership only; the returned anchor is always current.
+    if (forecasts.some(forecast => {
+      const future = forecast.get(column.lane) ?? column;
+      return (future.extent ?? 1) <= (keep ? .98 : .995) ||
+        (future.copyClearance ?? Infinity) <= 0 ||
+        overviewBoundaryClearance(future, width, height, bounds) <= 0;
+    })) continue;
+    if (accepted.some(other => overviewLabelClearance(column, other, width) <= (keep ? 8 : 10) ||
+      forecasts.some(forecast => overviewLabelClearance(forecast.get(column.lane) ?? column,
+        forecast.get(other.lane) ?? other, width) <= 0))) continue;
     accepted.push(column);
   }
-  return accepted.sort((a, b) => a.x - b.x);
+  return accepted;
 }

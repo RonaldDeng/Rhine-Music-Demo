@@ -27,8 +27,9 @@ async function touch(page,points){
 try{
 for(const [name,width,height,mobile] of cases.filter(([name])=>!process.env.REVIEW_CASES||process.env.REVIEW_CASES.split(',').includes(name))){
  const context=await browser.newContext({viewport:{width,height},hasTouch:mobile,isMobile:mobile,deviceScaleFactor:mobile?2:1});
+ await context.addInitScript(()=>localStorage.setItem("rhine-settings",JSON.stringify({sound:false,music:false,soundVolume:0,musicVolume:0})));
  const page=await context.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));
- await page.goto(`${base}/?scene=archive`);
+ await page.goto(`${base}/?original=1&scene=archive`);
  await page.waitForFunction(()=>window.rhine?.stats().ready&&!document.querySelector('#loading'),null,{timeout:60000});
  await page.waitForFunction(()=>window.rhine.stats().extraction>=.395,null,{timeout:60000});await page.waitForTimeout(300);
  const entry={name,viewport:{width,height},errors};report.push(entry);

@@ -116,7 +116,7 @@ export async function dependenciesReady(projectDir) {
 
 export async function buildFingerprint(projectDir) {
   const hash = createHash('sha256')
-  const roots = ['src', 'public', 'content', 'index.html', 'package.json', 'package-lock.json', 'tsconfig.json', 'scripts/export-records.mjs', 'scripts/archive-content.mjs', 'scripts/build-pwa.mjs', 'scripts/pwa-worker.js']
+  const roots = ['src', 'public', 'content', 'docs/album-introductions/agent.md', 'reference/cover-candidates/generator.mjs', 'index.html', 'package.json', 'package-lock.json', 'tsconfig.json', 'scripts/export-records.mjs', 'scripts/archive-content.mjs', 'scripts/build-pwa.mjs', 'scripts/pwa-worker.js']
   for (const entry of await fs.readdir(projectDir)) if (/^(?:vite\.config\.|tsconfig\.).+/.test(entry) && !roots.includes(entry)) roots.push(entry)
   async function append(relative) {
     const file = path.join(projectDir, relative)

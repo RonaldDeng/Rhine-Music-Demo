@@ -12,7 +12,7 @@
 @property --line {
   syntax: "<color>";
   inherits: true;
-  initial-value: rgba(42, 49, 42, 0.18);
+  initial-value: rgba(42, 49, 42, 0.2);
 }
 @property --accent {
   syntax: "<color>";
@@ -27,7 +27,7 @@
 @property --panel {
   syntax: "<color>";
   inherits: true;
-  initial-value: rgba(245, 244, 239, 0.97);
+  initial-value: rgba(245, 244, 239, 0.98);
 }
 @property --page-bg {
   syntax: "<color>";
@@ -37,7 +37,7 @@
 @property --veil {
   syntax: "<color>";
   inherits: true;
-  initial-value: rgba(236, 233, 225, 0.72);
+  initial-value: rgba(236, 233, 225, 0.75);
 }
 @property --music-status-ink {
   syntax: "<color>";
@@ -48,6 +48,11 @@
   syntax: "<number>";
   inherits: true;
   initial-value: 0;
+}
+@property --music-browse-veil-start {
+  syntax: "<percentage>";
+  inherits: true;
+  initial-value: 42%;
 }
 @property --music-side-veil-opacity {
   syntax: "<number>";
@@ -69,14 +74,48 @@
   inherits: true;
   initial-value: 70%;
 }
+/* Warm preview clearance is independent of the night field. These stops
+   interpolate with the existing theme/surface clock when modes change. */
+@property --music-day-veil-start {
+  syntax: "<percentage>";
+  inherits: true;
+  initial-value: 24%;
+}
+@property --music-day-veil-mid {
+  syntax: "<percentage>";
+  inherits: true;
+  initial-value: 48%;
+}
+@property --music-day-veil-end {
+  syntax: "<percentage>";
+  inherits: true;
+  initial-value: 70%;
+}
+@property --music-day-top-clear {
+  syntax: "<percentage>";
+  inherits: true;
+  initial-value: 24%;
+}
+@property --music-day-bottom-clear {
+  syntax: "<percentage>";
+  inherits: true;
+  initial-value: 73%;
+}
 
 .music-app {
   --music-status-ink: #74786f;
   --music-night-mix: 0;
+  /* Warm preview clearance can move independently of the night field. */
+  --music-browse-veil-start: 42%;
   --music-side-veil-opacity: 1;
   --music-night-veil-start: 24%;
   --music-night-veil-mid: 48%;
   --music-night-veil-end: 70%;
+  --music-day-veil-start: 24%;
+  --music-day-veil-mid: 48%;
+  --music-day-veil-end: 70%;
+  --music-day-top-clear: 24%;
+  --music-day-bottom-clear: 73%;
 }
 /* The side reading veil fades away when album text moves below the scene. */
 .music-app[data-layout="portrait"] {
@@ -85,9 +124,11 @@
 .music-app[data-theme="night"] {
   --music-status-ink: #e9eef2;
   --music-night-mix: 1;
+  --music-browse-veil-start: 42%;
 }
 .music-app[data-theme="dusk"] {
   --music-status-ink: #5f7280;
+  --music-browse-veil-start: 42%;
 }
 
 /* Enabled after the saved theme has painted; rapid reversals resume in place. */
@@ -102,11 +143,20 @@
     --page-bg,
     --veil,
     --music-status-ink,
+    --music-overlay-ink,
+    --music-overlay-muted,
+    --music-overlay-line,
     --music-night-mix,
+    --music-browse-veil-start,
     --music-side-veil-opacity,
     --music-night-veil-start,
     --music-night-veil-mid,
-    --music-night-veil-end;
+    --music-night-veil-end,
+    --music-day-veil-start,
+    --music-day-veil-mid,
+    --music-day-veil-end,
+    --music-day-top-clear,
+    --music-day-bottom-clear;
   transition-duration: calc(650ms * var(--music-motion-scale, 1));
   transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
 }
@@ -124,13 +174,46 @@
   pointer-events: none;
 }
 .music-app .music-vignette::before {
-  background: linear-gradient(
-    180deg,
-    var(--veil),
-    transparent 23%,
-    transparent 75%,
-    var(--veil)
-  );
+  /* Keep this field mounted during browse/detail handoffs. Retain a fixed
+     warm daylight colour and independent coverage, so theme
+     changes crossfade two stable fields instead of tinting a fading field. */
+  background:
+    linear-gradient(
+      90deg,
+      transparent var(--music-day-veil-start, 24%),
+      rgba(236, 233, 225, calc(0.28 * var(--music-side-veil-opacity))) var(--music-day-veil-mid, 48%),
+      rgba(236, 233, 225, calc(0.78 * var(--music-side-veil-opacity))) var(--music-day-veil-end, 70%),
+      rgba(236, 233, 225, calc(0.84 * var(--music-side-veil-opacity)))
+    ),
+    linear-gradient(
+      180deg,
+      rgba(236, 233, 225, 0.4),
+      transparent var(--music-day-top-clear, 24%),
+      transparent var(--music-day-bottom-clear, 73%),
+      rgba(236, 233, 225, 0.72)
+    );
+  opacity: calc(1 - var(--music-night-mix));
+}
+/* The unused legacy dusk theme retains its original veil. */
+.music-app[data-theme="dusk"] .music-vignette::before {
+  background: linear-gradient(180deg, var(--veil), transparent 23%, transparent 75%, var(--veil));
+}
+/* Portrait text begins at 50% even in short windows. Complete its warm base
+   there instead of allowing the fixed 34px fade to extend under the title. */
+.music-app[data-theme="day"][data-layout="portrait"] .music-detail::before {
+  inset: 0;
+  background: linear-gradient(180deg, transparent calc(50% - 34px), var(--page-bg) 50%);
+}
+/* Reveal the opaque reading field with the detail surface, after the camera
+   is ready. The root owns its 360ms entrance / 240ms exit, including reversal,
+   reduced motion and speed changes; the article alone slides horizontally.
+   Keep the fixed day colour and theme mix so switching themes still crossfades. */
+.music-app:not([data-layout="portrait"]):not([data-theme="dusk"]) .music-detail::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent 50%, #e8e5e1 70%);
   opacity: calc(1 - var(--music-night-mix));
 }
 /* The landscape archive leaves more of the array clear beside its title. */
@@ -138,6 +221,48 @@
   --music-night-veil-start: 32%;
   --music-night-veil-mid: 58%;
   --music-night-veil-end: 78%;
+  --music-day-veil-start: 32%;
+  --music-day-veil-mid: 58%;
+  --music-day-veil-end: 78%;
+}
+/* The raised shell reaches 48.7% width / 81.1% height during ordinary
+   browsing. Keep both warm overlays clear there, including the glass edges.
+   Overview retains its existing reading field. */
+.music-app[data-mode="archive"]:not([data-overview="true"]):not([data-layout="portrait"]) {
+  --music-day-top-clear: 2%;
+  --music-day-bottom-clear: 82%;
+  --music-day-veil-start: 50%;
+}
+.music-app[data-theme="day"][data-mode="archive"]:not([data-overview="true"]):not([data-layout="portrait"]) {
+  --music-browse-veil-start: 50%;
+}
+/* Opening changes mode before the camera moves. Hold the preview field
+   until the scene is ready; then start its existing 650ms interpolation,
+   with the detail surface following 70ms later on the same motion clock. */
+.music-app[data-mode="detail"]:not([data-day-reading="ready"]):not([data-layout="portrait"]) {
+  --music-day-veil-start: 50%;
+  --music-day-veil-mid: 58%;
+  --music-day-veil-end: 78%;
+  --music-day-top-clear: 2%;
+  --music-day-bottom-clear: 92%;
+}
+.music-app[data-theme="day"][data-mode="detail"]:not([data-day-reading="ready"]):not([data-layout="portrait"]) {
+  --music-browse-veil-start: 50%;
+}
+/* Keep the entire inspection shell clear, including its lower edge while
+   rotating. Both side fields begin beyond the shell; the reading field may
+   remain translucent under the leftmost text before reaching full opacity. */
+.music-app[data-mode="detail"][data-day-reading="ready"]:not([data-layout="portrait"]) {
+  --music-day-veil-start: 50%;
+  --music-day-veil-mid: 66%;
+  --music-day-veil-end: 82%;
+  --music-day-top-clear: 2%;
+  --music-day-bottom-clear: 92%;
+}
+/* A rotated shell aligns before returning to the shelf. Keep its clearance
+   until the existing presentation controller releases ordinary browsing. */
+.music-app[data-mode="archive"][data-presentation="returning"]:not([data-overview="true"]):not([data-layout="portrait"]) {
+  --music-day-bottom-clear: 92%;
 }
 .music-app .music-vignette::after {
   background:

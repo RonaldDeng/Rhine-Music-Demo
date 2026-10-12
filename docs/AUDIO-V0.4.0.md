@@ -1,10 +1,10 @@
-# V0.4.0 音频路线、实现与验证
+# 音频路线、缓存与输出边界
 
-> V0.4.1 更新：本页保留 V0.4.0 的实现与验证历史。V0.4.1 已增加真正的预排无缝接续，当前行为以 [歌曲衔接说明](SONG-TRANSITIONS-V0.4.1.md) 和 [发行检查](RELEASE-V0.4.1.md) 为准。下述 DSD 的 24 位 / 176.4 kHz 适用于普通解码；CoreAudio 无缝预备的下一首另行归一为当前引擎采样率的 Float32 PCM。4 GiB 是当前磁盘缓存回收目标，正在使用和受保护的文件可能暂时超过目标。
+本页保留当前音频实现的边界；无缝排程见 [歌曲衔接说明](SONG-TRANSITIONS-V0.4.1.md)，实际执行结果见 [当前候选检查](REVIEW-V0.5.0.md)。下述 DSD 的 24 位 / 176.4 kHz 适用于普通解码；CoreAudio 无缝预备的下一首另行归一为当前引擎采样率的 Float32 PCM。4 GiB 是当前磁盘缓存回收目标，正在使用和受保护的文件可能暂时超过目标。
 
 日期：2026-10-02。仅本地开发，没有上传 GitHub，没有复制或改写用户曲库。
 
-## 2026-10-07：DSF / DFF 播放
+## DSF / DFF 播放
 
 DSF / DFF 通过本机 FFmpeg 解码为 **24 位 / 176.4 kHz PCM WAV**，保留源声道数，再使用既有浏览器或 CoreAudio 共享输出。转换只生成播放缓存，原始文件与标签始终只读。无需具备 DSD 解码能力的 DAC；本版不输出 Native DSD 或 DoP。
 
@@ -12,20 +12,13 @@ DSF / DFF 通过本机 FFmpeg 解码为 **24 位 / 176.4 kHz PCM WAV**，保留�
 
 曲库保留源格式与 DSD 采样率。准备接口额外返回 `conversion: "dsd-to-pcm"`、一位采样时钟 `sourceSampleRate` 与 `sourceBitsPerSample: 1`；`sampleRate`、`bitsPerSample` 和 `duration` 描述实际 PCM 缓存。DSF 容器的 probe 时长可能含尾块填充，因此播放时长以解码后的实际 PCM 帧为准。176.4 kHz 是缓存采样率，不保证浏览器或 CoreAudio 共享输出设备以该采样率工作。
 
-新增完全自生的双声道 DSD64 / 128 / 256 样本（DSF LSB、DSF MSB、DFF MSB）。样本先用 ffprobe 与 stream copy 核对原始位流，再用于播放解码、声道、缓存及源文件不变检查。最终执行结果见 [本轮验收](REVIEW-V0.4.0.md)；未经过样本验证的 DST 压缩 DFF 不列为已实测范围。
+新增完全自生的双声道 DSD64 / 128 / 256 样本（DSF LSB、DSF MSB、DFF MSB）。样本先用 ffprobe 与 stream copy 核对原始位流，再用于播放解码、声道、缓存及源文件不变检查。最终执行结果见 [当前候选检查](REVIEW-V0.5.0.md)；未经过样本验证的 DST 压缩 DFF 不列为已实测范围。
 
-## 选择的路线
+## 解码与输出
 
-用户已确认：增加 macOS 原生 CoreAudio 输出、允许选择输出设备，同时保留浏览器播放。本轮采用本机 FFmpeg 的 libavformat / libavcodec 解码器，统一解码为本地 PCM WAV；歌曲可以交给浏览器，或交给 Swift AVAudioEngine / AVAudioPlayerNode，经 CoreAudio 输出到所选设备。没有把 WASAPI/ASIO 的 Windows 路线套用到 Mac。
+歌曲通过本机 FFmpeg 解码为本地 PCM WAV，再交给浏览器或 Swift AVAudioEngine / AVAudioPlayerNode，经 CoreAudio 输出到选择的设备。两个播放后端共用曲库与控制器。
 
-| 方案 | 本轮判断 |
-| --- | --- |
-| 仅浏览器原生 Audio 解码 | 保留为无 FFmpeg 时的兼容回退；APE、AIFF、ALAC 等浏览器兼容性不能覆盖最初目标 |
-| 浏览器 WASM 分别引入 FLAC / APE 解码器 | 需要额外维护格式、内存、大文件 seek、AudioWorklet 和设备输出，无法直接解决 macOS 原生输出 |
-| FFmpeg + macOS 原生输出 | 本轮选择：统一容器识别和开源解码；本机桥接复用原有 Node 服务，前端保持同一个播放控制器 |
-| 直接控制外部播放器 | 既有 foobar2000 接口保留，但不作为本轮独立输出前提 |
-
-FFmpeg 没有作为二进制塞入项目。运行时查找 `FFMPEG_PATH` / `FFPROBE_PATH` 或 Homebrew / 系统 PATH，调用本机已经安装的程序。FFmpeg 和 ffprobe 必须同时存在。macOS 输出还需 Apple Command Line Tools 中的 `swiftc`，首次使用在数据目录编译小型 Swift helper；失败时设置明确显示原因，不报告虚假的原生能力。安装依赖属于用户机器配置，本次未自动安装任何依赖。
+FFmpeg 没有作为二进制塞入项目。运行时查找 `FFMPEG_PATH` / `FFPROBE_PATH` 或 Homebrew / 系统 PATH，调用本机已经安装的程序。FFmpeg 和 ffprobe 必须同时存在。macOS 输出还需 Apple Command Line Tools 中的 `swiftc`，首次使用在数据目录编译小型 Swift helper；失败时设置明确显示原因，不报告虚假的原生能力。安装依赖属于用户机器配置，项目不附带这些工具的二进制。
 
 设置中可以选择「浏览器」或「CoreAudio」，并选择当前实际枚举到的输出设备。切换后端保留曲目和播放位置，包括暂停后的恢复。CoreAudio 是共享模式，系统可混音与重采样；不包含独占 / hog mode、DoP / Native DSD、自动更改设备采样率或 bit-perfect 保证。氛围 BGM 继续使用浏览器独立控制，不改成原生歌曲队列的一部分。
 
@@ -33,7 +26,7 @@ FFmpeg 没有作为二进制塞入项目。运行时查找 `FFMPEG_PATH` / `FFPR
 
 - 索引支持 APE、WavPack、WMA、WAV、FLAC、ALAC / M4A、AIFF、MP3、AAC、OGG、OPUS、DSF / DFF；DSF / DFF 的浏览器播放须先经本机 PCM 准备，不依赖浏览器直接解码 DSD。
 - 实际格式由 FFmpeg 检测，不能仅凭扩展名声称解码成功。PCM 来源按实际位数保留为 16 / 24 / 32 位，浮点解码用 float32 PCM，并保留其采样率；DSD 来源固定为 24 位 / 176.4 kHz。两条路线均保留声道数，AVAudioEngine 内部和硬件转换不等于无损直通。
-- 首次播放先完整解码，完成后才开始播放。优点是 seek、暂停、恢复和 HTTP Range 有确定文件长度；代价是大文件首次播放有准备时间。本轮不宣称流式边解码边播放或无缝 gapless。
+- 首次播放先完整解码，完成后才开始播放。优点是 seek、暂停、恢复和 HTTP Range 有确定文件长度；代价是大文件首次播放有准备时间。这一路径不是边解码边播放；预排无缝接续按独立的歌曲衔接实现处理。
 - 数据目录的 `audio-cache-v040/` 保存 PCM WAV 与技术信息，键含源路径、大小、修改时间、缓存版本；源文件保持只读。单文件 PCM 上限 2 GiB，完成的 WAV 缓存按最近使用上限 4 GiB，至多两个并发解码，临时输出另计，最多约 4 GiB。超过单文件限制明确报错。32 位 WAV、超长或特别声道布局的浏览器支持受宿主浏览器影响。
 - `native-v040/` 保存按 Swift 源码及 CPU 架构摘要命名的本地 helper，不提交本机二进制。服务关闭、前端停止或后端切换负责释放音频；关闭本地服务即终止原生输出进程。
 - 曲目自然结束自动下一首；播放中 seek 到精确末尾也触发结束；暂停状态 seek 到末尾仍保持暂停。再次点击正在播放的同一首歌保留位置。切歌先淡出再启动下一首，不叠播；当前歌曲结束到下一首开始仍有准备 / 轮询间隔。
@@ -54,33 +47,17 @@ FFmpeg 没有作为二进制塞入项目。运行时查找 `FFMPEG_PATH` / `FFPR
 - `GET /api/output/state`、`POST /api/output/command`：原生状态与白名单控制。
 - 前端 `MusicPlayer.refreshOutputs / setBackend / setOutputDevice`；播放 / 暂停 / 上下首 / seek / 音量继续共用原有调用。
 
-## 2026-10-02 首轮检查记录（历史）
+## 检查与设备边界
 
-以下格式与检查数量属于首轮验证，不含 2026-10-07 新增的 DSF / DFF 播放。新增范围见本页顶部与本轮验收记录。
+`npm run check:audio` 使用临时合成样本检查解码、缓存、源文件只读、声道、播放生命周期、接续及接口隔离。CoreAudio 真实设备自动测试使用零音量，离线渲染检查不连接扬声器。`scripts/fixtures/dsd.mjs` 生成 DSD64 / 128 / 256 夹具，不包含商业录音。
 
-隔离自动化脚本：`scripts/check-music-audio.mjs` 和 `scripts/check-music-player.mjs`。测试创建独立临时目录，生成短正弦音频，CoreAudio 真实输出测试音量固定为 0，没有把测试声音播到扬声器，也没有用个人曲库做批量测试。
-
-最终本机记录：FFmpeg 8.0.1（Homebrew，GPL / version3 构建）、Apple Swift 6.4、arm64、macOS 27.0.1。最终带完整 APE 样本执行 `check-music-audio.mjs` **18 / 18 通过，0 skipped**；`check-music-player.mjs` **6 / 6 通过**；既有 `check-music-library.mjs` **8 / 8 通过**；TypeScript 静态检查通过。浏览器 UI 联调结果由总体测试日志补充。
-
-已运行：
-
-1. 真正生成并解码 24-bit / 48 kHz WAV、FLAC、ALAC、AIFF、WavPack、MP3、Opus、AAC 和 float32 WAV。无损样本把源文件与缓存解回统一 PCM，SHA-256 完全一致；每个源文件前后 SHA-256 保持一致。WavPack 编码器实际生成 32 位，按真实 32 位验证。
-2. APE 使用 [FFmpeg 官方公开回归样本目录](https://samples.ffmpeg.org/A-codecs/lossless/) 的 `luckynight.ape`，完整文件 MD5 与官方 `md5sum` 的 `ab078cadd6367ab132124cbc0ecb8005` 一致，真实解码得到约 60 秒、44.1 kHz、16-bit、双声道 PCM。样本只下载到 `/tmp` 供本机回归，不纳入项目或发布文件；来源解释见其 [readme](https://samples.ffmpeg.org/A-codecs/lossless/readme)。首次网络下载不完整曾被 MD5 检查拒绝，续传完整后通过。
-3. 原生 helper 真编译、真启动，枚举本机五个可用输出端点；测试选中内置扬声器（0 音量），验证实际播放时钟推进、暂停时钟不动、seek、恢复、自然结束、精确末尾、连续取消和无效设备。没有实际试听音质，USB / 蓝牙设备兼容性、热插拔和长期稳定性仍需设备实测。
-4. 浏览器播放器控制器回归：BGM 与歌曲独立，快速取消不会后发开始，暂停37秒跨到原生恢复位置、原生暂停22秒跨回浏览器恢复位置，曲终续播。这里的自动化使用受控 Audio mock；浏览器真解码、按钮联调由本轮总体界面记录另行记录。
-5. 非法 Range、Origin、Host、缺失 track ID、外部文件路径请求、损坏 APE、扩展名伪装、符号链接与 concat 二级路径逃逸均有检查。缓存 fresh-entry 超额用 sparse 文件验证，不占用实际数 GiB 测试磁盘数据。
-6. 缺 ffprobe 不再宣称解码可用；在准备期间换设备 / 静音、重复点击当前播放曲目均有控制器回归。
-
-复跑：
+真实 APE 回归需要用户显式提供 `RHINE_TEST_APE`。测试不会自行联网下载样本，缺少样本时明确跳过。USB／蓝牙设备、热插拔、长期稳定性和人工听感不能从受控检查推断；当前执行范围见 [V0.5.0 验证](REVIEW-V0.5.0.md)。
 
 ```sh
-node --test scripts/check-music-audio.mjs
-node --experimental-strip-types --test scripts/check-music-player.mjs
-# 可选：传入本机已下载且完整的官方样本，测试不自行联网下载
-RHINE_TEST_APE=/tmp/rhine-v040-audio-fixtures/luckynight.ape node --test scripts/check-music-audio.mjs
+npm run check:audio
+# 可选：用户自行准备可用于测试的本机 APE 文件
+RHINE_TEST_APE="/绝对路径/样本.ape" npm run check:audio
 ```
-
-未提供 `RHINE_TEST_APE` 时 APE 回归会明确标记 skipped，不能把这次跳过描述为 APE 通过。
 
 ## 主要官方依据
 
@@ -90,4 +67,4 @@ RHINE_TEST_APE=/tmp/rhine-v040-audio-fixtures/luckynight.ape node --test scripts
 - [FFmpeg 命令行与协议](https://ffmpeg.org/ffmpeg.html)、[格式 / WAV](https://ffmpeg.org/ffmpeg-formats.html)：输入限制、PCM 输出与 WAV / RF64 限制。
 - [FFmpeg 通用格式支持](https://ffmpeg.org/general.html)：APE / FLAC / WAV / ALAC 等路线依据。
 - [Apple AVAudioEngine](https://developer.apple.com/documentation/avfaudio/avaudioengine)、[AVAudioPlayerNode](https://developer.apple.com/documentation/avfaudio/avaudioplayernode)、[输出设备属性](https://developer.apple.com/documentation/audiotoolbox/kaudiooutputunitproperty_currentdevice)：音频图、片段调度与 macOS 输出设备选择。
-- [FFmpeg 许可说明](https://ffmpeg.org/legal.html)：本轮使用独立的本机安装程序；若未来分发其二进制，需要按实际构建及随附组件重新整理许可材料。
+- [FFmpeg 许可说明](https://ffmpeg.org/legal.html)：运行使用独立的本机安装程序；若未来分发其二进制，需要按实际构建及随附组件重新整理许可材料。

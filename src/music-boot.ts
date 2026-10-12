@@ -1,6 +1,7 @@
 import "./music-boot.css";
-import { MusicBootFrameClock, MUSIC_BOOT_END_TIME, MUSIC_BOOT_SCENE_REVEAL_TIME, musicBootSceneTime } from "./music-boot-timing.ts";
-import { MusicOpening, MUSIC_OPENING_SLOGAN, musicOpeningFrame } from "./music-opening";
+import { musicIntroFrame } from "./music-intro-motion.ts";
+import { MusicBootFrameClock, MUSIC_BOOT_END_TIME, MUSIC_BOOT_START_TIME, MUSIC_BOOT_SCENE_START, MUSIC_BOOT_SCENE_REVEAL_TIME, musicBootSceneTime } from "./music-boot-timing.ts";
+import { MusicOpening, MUSIC_OPENING_CAPTION, musicOpeningFrame } from "./music-opening";
 
 const REVEAL_DURATION = 720;
 const REVEAL_EASE = "cubic-bezier(0.22, 1, 0.36, 1)";
@@ -11,7 +12,7 @@ const ease = (value: number) => {
 export interface MusicBootFrame {
   cinema: { reveal: number; lift: number; zoom: number; time: number; musicIntro: true };
   renderScene: boolean;
-  phase: "logo" | "orbit" | "slogan" | "array" | "select";
+  phase: "slogan" | "array" | "select";
   appTime: number;
 }
 export interface MusicBootOptions {
@@ -34,6 +35,7 @@ export class MusicBoot {
   private readonly opening: MusicOpening;
   private readonly frameClock = new MusicBootFrameClock();
   private running = false;
+  private sceneOnly = false;
   private revealing = false;
   private revealRevision = 0;
   private revealAnimations: Animation[] = [];
@@ -49,13 +51,13 @@ export class MusicBoot {
     this.root.hidden = true;
     this.root.setAttribute("role", "dialog");
     this.root.setAttribute("aria-modal", "true");
-    this.root.setAttribute("aria-label", `音乐开场：${MUSIC_OPENING_SLOGAN}`);
+    this.root.setAttribute("aria-label", `音乐开场：${MUSIC_OPENING_CAPTION}`);
     this.root.tabIndex = -1;
     this.opening = new MusicOpening(this.root);
     this.skipButton = document.createElement("button");
     this.skipButton.type = "button";
     this.skipButton.className = "music-boot-skip";
-    this.skipButton.textContent = "跳过开场 ↗";
+    this.skipButton.textContent = "跳过进场";
     this.root.appendChild(this.skipButton);
     this.parent.appendChild(this.root);
     this.skipButton.addEventListener("click", () => this.skip());
@@ -77,6 +79,13 @@ export class MusicBoot {
   get active() { return this.running || this.revealing; }
 
   start(nowSeconds = performance.now() / 1000, _forceMotion = false) {
+    this.begin(nowSeconds, false);
+  }
+  replay(nowSeconds = performance.now() / 1000) { this.start(nowSeconds); }
+  /** Replay the unchanged live shelf choreography without the 2D prologue. */
+  replayScene(nowSeconds = performance.now() / 1000) { this.begin(nowSeconds, true); }
+
+  private begin(nowSeconds: number, sceneOnly: boolean) {
     if (this.disposed) return;
     if (!Number.isFinite(nowSeconds)) nowSeconds = performance.now() / 1000;
     if (this.revealing) this.completeReveal(false);
@@ -84,36 +93,33 @@ export class MusicBoot {
       this.opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
       this.siblings = [...this.parent.children]
         .filter((node): node is HTMLElement => node instanceof HTMLElement && node !== this.root)
-        // Keep the real brand in its existing layout throughout the film. The
-        // header stays inert; only its controls receive a visibility override.
-        // Snapshot those nested controls too, preserving any prior inline state.
-        .flatMap((node) => node.classList.contains("music-header")
-          ? [node, ...[...node.children].filter((child): child is HTMLElement =>
-            child instanceof HTMLElement && !child.classList.contains("music-identity"))]
-          : [node])
         .map((node) => ({ node, inert: node.inert,
           visibility: node.style.getPropertyValue("visibility"),
           priority: node.style.getPropertyPriority("visibility") }));
       for (const { node } of this.siblings) {
         node.inert = true;
-        if (!node.classList.contains("three-scene") && !node.classList.contains("music-header"))
+        if (!node.classList.contains("three-scene"))
           node.style.setProperty("visibility", "hidden");
       }
     }
     this.running = true;
+    this.sceneOnly = sceneOnly;
     this.endpointRendered = false;
     this.parent.dataset.musicBoot = "running";
-    this.frameClock.reset(nowSeconds);
-    this.opening.update(0);
+    const startTime = sceneOnly ? MUSIC_BOOT_SCENE_START : MUSIC_BOOT_START_TIME;
+    this.frameClock.reset(nowSeconds, startTime);
+    if (sceneOnly) this.opening.root.hidden = true;
+    else this.opening.update(0);
     this.root.hidden = false;
-    this.root.setAttribute("aria-label", `音乐开场：${MUSIC_OPENING_SLOGAN}`);
+    this.root.dataset.phase = sceneOnly ? "array" : "slogan";
+    this.root.dataset.appTime = String(startTime);
+    this.root.setAttribute("aria-label", sceneOnly ? "专辑阵列入场" : `音乐开场：${MUSIC_OPENING_CAPTION}`);
     this.skipButton.hidden = false;
     this.options.onStart?.();
     const reduced = typeof this.options.reduced === "function" ? this.options.reduced() : this.options.reduced;
     if (reduced) { this.skip(); return; }
-    this.skipButton.focus({ preventScroll: true });
+    this.root.focus({ preventScroll: true });
   }
-  replay(nowSeconds = performance.now() / 1000) { this.start(nowSeconds); }
   skip() { if (this.running && !this.disposed) this.finish("skip"); }
 
   update(nowSeconds: number): MusicBootFrame | undefined {
@@ -123,13 +129,16 @@ export class MusicBoot {
     if (this.endpointRendered) { this.finish("complete"); return; }
     const appTime = this.frameClock.update(nowSeconds);
     this.endpointRendered = appTime === MUSIC_BOOT_END_TIME;
-    this.opening.update(appTime);
+    // MusicOpening.update() controls its own hidden flag during the paper
+    // dissolve, so never call it on this path: no 2D frame may reappear.
+    if (this.sceneOnly) this.opening.root.hidden = true;
+    else this.opening.update(appTime);
     const sceneTime = musicBootSceneTime(appTime);
-    const phase = sceneTime >= 25.68 ? "select" : musicOpeningFrame(appTime).phase;
+    const phase = musicIntroFrame(sceneTime) >= 89 ? "select" : musicOpeningFrame(appTime).phase;
     this.root.dataset.phase = phase;
     this.root.dataset.appTime = String(appTime);
     return {
-      appTime, phase, renderScene: appTime >= MUSIC_BOOT_SCENE_REVEAL_TIME,
+      appTime, phase, renderScene: this.sceneOnly || appTime >= MUSIC_BOOT_SCENE_REVEAL_TIME,
       cinema: {
         reveal: ease((sceneTime - 21.9) / 0.13),
         lift: 0,
@@ -183,8 +192,10 @@ export class MusicBoot {
       ));
     };
     fade(".music-vignette");
-    // The shared brand never fades out or re-enters at the film handoff.
-    fade(".music-topnav");
+    // The fixed brand and navigation return together only after the 3D film.
+    fade(".music-header");
+    fade(".music-view-toggle");
+    fade(".music-dev-panels");
     fade(".library-status", 45);
     fade(".music-bottomline", 90);
     fade(".music-empty", 60);

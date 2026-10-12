@@ -1,0 +1,55 @@
+/* Ink on the exposed shelf is independent of ink on the reading surface.
+   Interpolated tokens preserve theme motion without recoloring the right UI. */
+@property --music-overlay-ink {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #232722;
+}
+@property --music-overlay-muted {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #74786f;
+}
+@property --music-overlay-line {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: rgba(42, 49, 42, 0.2);
+}
+.music-app {
+  --music-overlay-ink: #232722;
+  --music-overlay-muted: #74786f;
+  --music-overlay-line: rgba(42, 49, 42, 0.2);
+}
+.music-app[data-theme="night"] {
+  --music-overlay-ink: #e9eef2;
+  --music-overlay-muted: #9caabd;
+  --music-overlay-line: rgba(208, 226, 243, 0.2);
+}
+.music-app[data-theme="dusk"] {
+  --music-overlay-ink: #24313b;
+  --music-overlay-muted: #5f7280;
+  --music-overlay-line: rgba(32, 53, 68, 0.22);
+}
+.music-app :is(.music-brand, .music-view-toggle, .overview-heading,
+  .overview-return, .music-back, .card-caption),
+.music-app:not([data-layout="portrait"]) :is(.music-counter, .album-stepper,
+  .music-keyhint, .music-bottomline > span:first-child),
+.music-app[data-overview="true"] .music-bottomline > span:first-child {
+  --ink: var(--music-overlay-ink);
+  --muted: var(--music-overlay-muted);
+  --line: var(--music-overlay-line);
+  color: var(--ink);
+}
+.music-app:not([data-layout="portrait"]) :is(.music-keyhint, .music-bottomline > span:first-child),
+.music-app[data-overview="true"] .music-bottomline > span:first-child {
+  color: var(--muted);
+}
+.music-app[data-theme="day"] .library-status:not(.working) > i {
+  background: var(--music-overlay-muted);
+}
+
+/* Restore the original warm selection colours; action accents stay separate. */
+.music-app[data-theme="day"] ::selection {
+  background: #cbb397;
+  color: #151713;
+}

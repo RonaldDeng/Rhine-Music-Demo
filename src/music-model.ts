@@ -1,21 +1,34 @@
 import * as THREE from "three";
 import type { ThemeTransition } from "./theme-transition.ts";
 
-// V0.4.0 is authored at its final dimensions by art/build-music-case.mjs.
-// Keep the shelf/camera centre stable while rebuilding the shell construction.
+// Authored at final dimensions by art/build-music-case.mjs. The compact case
+// is 8% wider than the first 3.70-unit revision; artwork retains its dimensions.
 export const MUSIC_MODEL = {
-  width: 4.45,
+  width: 3.996,
   height: 3.35,
   depth: 0.14,
   center: { x: 0, y: 1.85, z: 0 },
 } as const;
 
+// Restore the original shelf's clear gap (.75), independent of case width.
+// Scene transforms, navigation and lighting must share this physical spacing.
+export const MUSIC_COLUMN_GAP = 0.75;
+export const MUSIC_COLUMN_SPACING = MUSIC_MODEL.width + MUSIC_COLUMN_GAP;
+
+// Keep the restored binding's absolute width while narrowing only the glass.
+// Its original .26-wide source was normalized from 4.3 to 4.45 scene units.
+const bindingWidth = 4.45 * (0.26 / 4.3);
+export const MUSIC_CASE_WIDTHS = {
+  spine: bindingWidth,
+  glass: MUSIC_MODEL.width - bindingWidth,
+} as const;
+
 // A replaceable paper insert, inside the cover: rear tray < print < front lid.
 // The plane never shares a depth with the cover or the retaining frame.
 export const MUSIC_COVER = {
-  width: 3.06,
-  height: 3.06,
-  x: 0.17,
+  width: 2.98,
+  height: 2.98,
+  x: 0.14,
   y: MUSIC_MODEL.center.y,
   z: 0.027,
 } as const;
@@ -25,7 +38,7 @@ export const MUSIC_CASE_LAYERS = {
   print: MUSIC_COVER.z,
   lidBack: 0.052,
   lidFront: MUSIC_MODEL.depth / 2,
-  spineRight: -1.875,
+  spineRight: -MUSIC_MODEL.width / 2 + MUSIC_CASE_WIDTHS.spine,
 } as const;
 
 type GlassFinish = Pick<THREE.MeshPhysicalMaterial,
@@ -41,10 +54,11 @@ const MUSIC_GLASS_FINISH: Record<string, {
     dayColor: "#fffdf8",
   },
   Ivory_Edges: {
-    // The reference spine transmits blurred shelf bands. A very high roughness
-    // erases those bands into a flat white strip, even at high transmission.
+    // Keep the accepted night/dusk finish. Daylight's brighter shelf and weaker
+    // additive scatter need real diffusion and density in the spine itself:
+    // it must obscure background detail more than the supporting tray does.
     baseline: { transmission: 0.88, thickness: 0.06, roughness: 0.25, attenuationDistance: 4.5 },
-    day: { transmission: 0.84, thickness: 0.08, roughness: 0.3, attenuationDistance: 3.2 },
+    day: { transmission: 0.64, thickness: 0.1, roughness: 0.52, attenuationDistance: 2 },
     dayColor: "#e7e1d8",
   },
   Optical_Diffuser: {

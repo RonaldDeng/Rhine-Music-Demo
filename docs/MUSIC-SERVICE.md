@@ -1,4 +1,4 @@
-# 本地音乐服务 · V0.4.0（macOS）
+# 本地音乐服务（macOS）
 
 `node scripts/music-server.mjs` 同时提供 `dist/` 界面和本地音乐 API。默认仅监听 `127.0.0.1:5173`；端口可通过 `--port 5174` 或 `PORT` 指定。修改前端后重新构建并刷新。服务保持运行期间可编辑本地流派规则，下一次读取曲库就会生效。
 
@@ -10,7 +10,7 @@ node scripts/music-server.mjs
 
 ## 数据与文件权限
 
-默认索引目录是仓库旁边的 `music-data-v3/`，可通过 `MUSIC_DATA_DIR` 覆盖。首次运行默认无音乐目录，请在界面填写并保存自己的音乐文件夹。`MUSIC_ROOTS` 也能提供首次根目录，多个目录按系统路径分隔符分隔（macOS 为冒号）；已有 `config.json` 优先，更新程序不会更换已保存的音乐目录。
+默认索引目录是仓库旁边的 `music-data-v3/`，可通过 `MUSIC_DATA_DIR` 覆盖。首次运行默认无音乐目录，请在“设置 → 音乐库设置 → 文件夹与扫描”中填写并保存自己的音乐文件夹。`MUSIC_ROOTS` 也能提供首次根目录，多个目录按系统路径分隔符分隔（macOS 为冒号）；已有 `config.json` 优先，更新程序不会更换已保存的音乐目录。
 
 - `config.json`：根目录、是否在扫描后补充在线资料、可选的本机 Beefweb 地址。
 - `library-index.json`：自动扫描缓存。记录真实文件的引用、尺寸/修改时间、元数据、封面与在线来源，不复制歌曲。
@@ -64,7 +64,7 @@ DSF / DFF 在索引中仍为 `browserPlayable: false`，表示浏览器不能直
 
 ## 本地制作信息与 QQ 音乐查询（V0.3.1）
 
-仅「02 专辑介绍」下方的制作人员区提供单张专辑查询，设置提供查询缺失资料的批量入口。数据通过本地 Node 服务请求 QQ 音乐的搜索与 `music.sociality.KolWorksTag / SongProducer` 接口；只发送必要的歌名、歌手及公开歌曲标识，音频、文件路径和本地备注不发送。按曲目真实标签匹配歌曲，不能把根目录单曲的显示专辑标题当作真实专辑名。无法确认歌名、艺人、版别或时长时不猜测人员。
+仅「02 专辑介绍」下方的制作人员区提供单张专辑查询，“设置 → 音乐库设置 → 制作信息”提供查询缺失资料的批量入口。数据通过本地 Node 服务请求 QQ 音乐的搜索与 `music.sociality.KolWorksTag / SongProducer` 接口；只发送必要的歌名、歌手及公开歌曲标识，音频、文件路径和本地备注不发送。按曲目真实标签匹配歌曲，不能把根目录单曲的显示专辑标题当作真实专辑名。无法确认歌名、艺人、版别或时长时不猜测人员。
 
 `producers` 沿用现有字段名，记录 `name/role/source/trackId/trackTitle/url`，语义扩展为制作、创作和演奏人员。QQ 信息的 `source` 为 `QQ Music`；本地标签为 `local`，既有 MusicBrainz 资料仍保留。界面只在「02 专辑介绍」显示名单，按姓名与来源合并，姓名、职责、来源左对齐。姓名 14px、职责 12px、来源 10.5px 灰色小字；单曲直接标注歌名，多曲展开查看每曲职责及来源链接，不提升为整张专辑职务。
 
@@ -76,9 +76,9 @@ QQ 来源属于未承诺稳定性的公开可访问接口。2026-10-01 公开样
 
 ## 可选 MusicBrainz
 
-入口位于“设置 → 高级设置 · MusicBrainz”，默认收起。展开后可手动补全、设置联系信息，以及开启或关闭扫描后的自动补全；音乐库面板保留本地分类规则入口。界面整理不改变已有自动补全偏好、缓存或资料来源。
+入口位于“设置 → 音乐库设置 → 分类与资料来源”中的“MusicBrainz 资料补全”，默认收起。展开后可手动补全、设置联系信息，以及开启或关闭扫描后的自动补全；同一分组提供本地流派归并规则入口。界面整理不改变已有自动补全偏好、缓存或资料来源。
 
-在线查询只上传专辑文字信息/已有 MBID，不上传音频。默认关闭自动补全。开启前需在上述高级设置中填写自己的维护者联系邮箱或项目网址（通过 `POST /api/config {"musicBrainzContact":"自己的邮箱或项目网址"}` 保存），也可使用环境变量：
+在线查询只上传专辑文字信息/已有 MBID，不上传音频。默认关闭自动补全。开启前需在上述资料补全区域填写自己的维护者联系邮箱或项目网址（通过 `POST /api/config {"musicBrainzContact":"自己的邮箱或项目网址"}` 保存），也可使用环境变量：
 
 ```sh
 MUSICBRAINZ_CONTACT='your-project-contact' node scripts/music-server.mjs
@@ -86,13 +86,15 @@ MUSICBRAINZ_CONTACT='your-project-contact' node scripts/music-server.mjs
 
 通过显式补全按钮查询一次；或保存 `onlineEnabled:true`，以后扫描完成后自动查询未查过的专辑。已有 Release MBID 精确查找，否则比较标题、艺术家、年份和曲目数，并要求唯一的高匹配结果。不确定时保留本地资料，绝不猜制作人。所有外网请求间隔至少 1.1 秒。断网、限流和缺配置只影响补全，不阻止本地曲库显示与播放。
 
-通过 MusicBrainz 补全时，专辑介绍只在高置信匹配后，跟随 release-group 关联的 Wikidata/Wikipedia 链接获取百科导言。优先中文，其次英文；该流程不进行仅按标题的百科搜索，不把 MusicBrainz 编辑注释当介绍。`descriptionSource` 保存来源名称、链接、更新时间与许可说明。没有关联、存在消歧义或网络失败时保留空介绍并提供状态；原有缓存不被无结果覆盖。设置页的独立介绍更新流程见下文。
+通过 MusicBrainz 补全时，专辑介绍只在高置信匹配后，跟随 release-group 关联的 Wikidata/Wikipedia 链接获取百科导言。优先中文，其次英文；该流程不进行仅按标题的百科搜索，不把 MusicBrainz 编辑注释当介绍。`descriptionSource` 保存来源名称、链接、更新时间与许可说明。没有关联、存在消歧义或网络失败时保留空介绍并提供状态；原有缓存不被无结果覆盖。“设置 → 音乐库设置 → 专辑介绍”中的独立百科查询流程见下文。
 
 制作人来源和角色保留，录音级制作人附参与曲目。流派来自 release/release-group 的 `genres`，不把任意 `tags` 当成流派。MusicBrainz 核心数据与补充数据分别受 CC0 和 CC BY-NC-SA 3.0 约束；保存来源时保留相应许可。公开发布的是播放器代码，个人曲库及在线资料缓存不随仓库和 ZIP 分发，不将这些数据统一重授 MIT；详见 [NOTICE](../NOTICE.md)。
 
 参考：[MusicBrainz API](https://musicbrainz.org/doc/MusicBrainz_API)、[速率与 User-Agent](https://musicbrainz.org/doc/MusicBrainz_API/Rate_Limiting)、[数据库许可](https://musicbrainz.org/doc/MusicBrainz_Database)、[Wikidata 访问](https://www.wikidata.org/wiki/Help:Data_access)、[百科导言 API](https://www.mediawiki.org/wiki/Extension:TextExtracts)、[music-metadata](https://github.com/Borewit/music-metadata)。
 
 ## 一键查询/更新专辑介绍
+
+入口位于“设置 → 音乐库设置 → 专辑介绍”中的“公开百科查询”，按需展开。
 
 独立的 `scripts/album-introductions.mjs` 使用 Wikipedia 与 Wikidata 公开读取 API，不依赖 MusicBrainz contact 表单或 API Key；如果用户已填写真实联系方式，沿用该信息标识客户端，否则使用明确的本应用 User-Agent。查询只发送专辑名/歌手及公开百科实体 ID，年份在本地比对；不发送文件路径、音频、曲目清单或本地 comment。
 
@@ -104,11 +106,11 @@ MUSICBRAINZ_CONTACT='your-project-contact' node scripts/music-server.mjs
 
 默认复用已有介绍与最近 7 天的未匹配结果；`force:true` 强制重新查询，但依旧保留可用旧文本直到获取新的可靠结果。失败可重试，批量请求自动合并，进度与界面/三维动画解耦。介绍与匹配状态缓存在 `library-index.json`，重启与扫描保留。
 
-历史验证记录（2026-09-09）：真实 API 请求曾出现连接超时，未取得新介绍；网络失败不会标成没有资料。V0.1.0、V0.2.0 发布检查及本次 V0.3.0 界面检查均未重新验证线上接口的资料覆盖率；本地浏览与播放不依赖查询成功。
+线上资料覆盖率和访问成功率不由本地回归保证；网络失败不会标成没有资料，本地浏览与播放不依赖查询成功。
 
 ## 开发检查说明
 
-以下说明既有检查脚本的用途，不表示这些脚本在本次 V0.3.0 修订中全部重新运行；本次检查范围见 [界面回归记录](UI-REVIEW-V0.3.0.md)。
+以下说明检查脚本的用途；当前候选的执行结果和覆盖范围见 [验证记录](REVIEW-V0.5.0.md)。
 
 `node --test scripts/check-music-library.mjs` 使用临时合成 WAV 和元数据 fixture，验证实际 WAV 解析、字节范围、增删与断盘保留、缓存、封面优先、人工覆盖、并发扫描和含糊匹配。测试不会读取或改写用户歌曲。
 

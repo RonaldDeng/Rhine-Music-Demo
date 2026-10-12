@@ -8,11 +8,12 @@ import { musicOverviewColumnExtent } from '../src/music-overview-edge.ts';
 import { visibleCell, MUSIC_LOOP_ROWS, LOOP_COLUMNS } from '../src/archive-loop.ts';
 import { damp } from '../src/motion.ts';
 import { setMusicAlbums, records, archiveColumns, columnFiles, fileLocation } from '../src/data.ts';
-import { selectionCell, sameCell, wrap, fileAtCell, nearestOccurrence, COLUMN_SPACING, ROW_SPACING } from '../src/archive-loop.ts';
+import { selectionCell, sameCell, wrap, fileAtCell, nearestOccurrence, ROW_SPACING } from '../src/archive-loop.ts';
+import { MUSIC_COLUMN_SPACING as COLUMN_SPACING } from '../src/music-model.ts';
 import { MusicRealColumns } from '../src/music-real-columns.ts';
 
 const rates = { column: 3.7, rail: 3.7, lane: 4, shoulder: 5 };
-const target = (lanes, rows) => ({ column: lanes * 5.2, rail: -rows * .62, lane: lanes, shoulder: rows });
+const target = (lanes, rows) => ({ column: lanes * COLUMN_SPACING, rail: -rows * ROW_SPACING, lane: lanes, shoulder: rows });
 const zero = target(0, 0);
 const tracks = () => Object.fromEntries(ARCHIVE_TRACK_KEYS.map(key => [key, { value: 0, velocity: 0 }]));
 const close = (a, b, tolerance = 1e-9) => assert.ok(Number.isFinite(a) && Math.abs(a - b) <= tolerance,
@@ -68,7 +69,7 @@ for (const [lanes, rows] of [[1, 0], [4, 30], [8, 80]]) {
   const oldRail = { value: 0, velocity: 0 }, placement = new MusicPlacementMotion();
   damp(oldRail, 1, 3.7, .2);
   placement.update(1, .2, false);
-  const progress = springs.column.value / (lanes * 5.2);
+  const progress = springs.column.value / (lanes * COLUMN_SPACING);
   assert.ok(progress < .025, 'First 200 ms travels under 2.5%, even for a long jump');
   assert.ok(oldRail.value > progress * 7, 'The old early impulse is substantially reduced');
   audit.push({ lanes, rows, seconds: motion.durationSeconds.toFixed(3),
@@ -184,7 +185,7 @@ const sceneMethod = name => {
   return `${name}(${node.parameters.map(parameter => parameter.getText(sceneTree)).join(',')}) ${node.body.getText(sceneTree)}`;
 };
 const sceneMethodsFactory = new Function('THREE', 'musicLibrary', 'records', 'fileLocation', 'selectionCell',
-  'sameCell', 'COLUMN_SPACING', 'ROW_SPACING', transpile(`return {
+  'sameCell', 'ROW_SPACING', transpile(`return {
     ${['select', 'switchMusicAlbum', 'cellPosition', 'musicBrowseRowForColumn'].map(sceneMethod).join(',\n')}
   };`));
 const updateMethod = sceneClass.members.find(node => ts.isMethodDeclaration(node) && node.name.getText(sceneTree) === 'update');
@@ -215,7 +216,7 @@ function navigationFixture(mode = 'filled', reduced = false, speed = 1) {
   setMusicAlbums(albums, counts.map((_, lane) => ({ id: `g${lane}`, name: `Artist ${lane}` })));
   const location = fileLocation(0);
   const sceneHost = {
-    loaded: true, looping: true, reduced, musicArrayMode: mode,
+    columnSpacing: COLUMN_SPACING, loaded: true, looping: true, reduced, musicArrayMode: mode,
     musicPresentation: new MusicPresentation(), musicArchiveMotion: new MusicArchiveMotion(), musicNavigationLift: false,
     musicRealColumns: new MusicRealColumns(), musicOverview: { value: 0 },
     selectedSlot: location.slot, selectedCell: { lane: location.lane, row: location.row },
@@ -225,7 +226,7 @@ function navigationFixture(mode = 'filled', reduced = false, speed = 1) {
     outgoing: [], decryption: { select() {}, enter() {}, clarity: 0 }, deferSelectionPulse: true,
     clock: 0, lastInteraction: 0, targetRotation: 0, rotation: 0, returnY: null,
     get musicBrowseRow() { return (-this.rail.value - 2.17) / ROW_SPACING + 15.5; },
-    ...sceneMethodsFactory(THREE, true, records, fileLocation, selectionCell, sameCell, COLUMN_SPACING, ROW_SPACING),
+    ...sceneMethodsFactory(THREE, true, records, fileLocation, selectionCell, sameCell, ROW_SPACING),
   };
   sceneHost.musicRealColumns.reset(counts, sceneHost.selectedCell);
   sceneHost.musicPresentation.request('archive');

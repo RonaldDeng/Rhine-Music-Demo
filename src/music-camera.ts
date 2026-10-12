@@ -151,22 +151,20 @@ export class MusicCameraMotion {
   private lastPosition = new THREE.Vector3();
   private lastAim = new THREE.Vector3();
   private span = { value: 0, velocity: 0 };
-  private yaw = { value: 0, velocity: 0 };
   private elevation = { value: 0, velocity: 0 };
   private initialized = false;
 
-  navigation(laneSpeed: number, rowSpeed: number, detail: number, dt: number, reduced: boolean) {
-    // The reference cruises through the shelf before settling into a shot.
-    // A small orbit follows actual rail speed; it cannot cancel the card lift.
-    const yaw = THREE.MathUtils.clamp(laneSpeed / 2.5, -1, 1) * 0.018 * (1 - detail);
+  navigationElevation(rowSpeed: number, detail: number, dt: number, reduced: boolean) {
+    // Column browsing translates the shelf under a fixed camera heading.
+    // A speed-driven yaw would keep rotating back after the column has arrived.
+    // Retain only the existing vertical response for filled-array row browsing.
     const elevation = THREE.MathUtils.clamp(rowSpeed / 3, -1, 1) * 0.006 * (1 - detail);
     if (reduced) {
-      this.yaw.value = this.yaw.velocity = this.elevation.value = this.elevation.velocity = 0;
+      this.elevation.value = this.elevation.velocity = 0;
     } else {
-      damp(this.yaw, yaw, 6, dt);
       damp(this.elevation, elevation, 6, dt);
     }
-    return { yaw: this.yaw.value, elevation: this.elevation.value };
+    return this.elevation.value;
   }
 
   /** Follow the authored opening directly, carrying its velocity into browsing. */

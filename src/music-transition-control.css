@@ -1,0 +1,90 @@
+/* The transport grows to the left; play and stop keep their right-hand anchor. */
+.music-app {
+  --song-transition-slot: 0px;
+}
+
+.music-app[data-transition-control="true"] {
+  --song-transition-slot: 35px;
+}
+
+.music-topnav .minimal-transport #song-transition-toggle {
+  position: relative;
+  flex: 0 0 29px;
+  color: var(--ink);
+  opacity: 0.68;
+}
+
+.music-app[data-transition-control="false"] #song-transition-toggle,
+.music-topnav .minimal-transport #song-transition-toggle[hidden] {
+  display: none;
+}
+
+.music-topnav .minimal-transport #song-transition-toggle[aria-pressed="true"] {
+  color: var(--accent);
+  opacity: 1;
+}
+
+.music-topnav .minimal-transport #song-transition-toggle:hover,
+.music-topnav .minimal-transport #song-transition-toggle:focus-visible {
+  opacity: 1;
+}
+
+#song-transition-toggle .song-transition-glyph {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  opacity: 0;
+  transition: opacity calc(180ms * var(--music-motion-scale, 1)) ease;
+}
+
+#song-transition-toggle .song-transition-glyph svg {
+  display: block;
+  width: 17px;
+  height: 17px;
+}
+
+#song-transition-toggle[data-transition="fade-in-out"] .song-transition-glyph[data-transition="fade-in-out"],
+#song-transition-toggle[data-transition="gapless"] .song-transition-glyph[data-transition="gapless"],
+#song-transition-toggle[data-transition="fade-out"] .song-transition-glyph[data-transition="fade-out"] {
+  opacity: 1;
+}
+
+@media (max-width: 700px) {
+  .music-app[data-transition-control="true"] {
+    --song-transition-slot: 25px;
+  }
+
+  .music-topnav .minimal-transport #song-transition-toggle {
+    flex-basis: 24px;
+  }
+
+  #song-transition-toggle .song-transition-glyph svg {
+    width: 16px;
+    height: 16px;
+  }
+}
+
+.music-app[data-layout="portrait"][data-transition-control="true"] {
+  --song-transition-slot: 25px;
+}
+
+.music-app[data-layout="portrait"] .music-topnav .minimal-transport #song-transition-toggle {
+  flex-basis: 24px;
+}
+
+/* At 320px the extra transport slot fits within the existing 20px edge rails. */
+@media (max-width: 359px) {
+  .music-app[data-layout="portrait"][data-transition-control="true"] .music-topnav {
+    grid-template-columns: 28px 98px 28px minmax(0, 1fr);
+    gap: 4px;
+  }
+
+  .music-app[data-layout="portrait"][data-transition-control="true"] .theme-switch {
+    width: 98px;
+  }
+}
+
+.music-app.reduce-motion #song-transition-toggle .song-transition-glyph {
+  transition: none;
+}

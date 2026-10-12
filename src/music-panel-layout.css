@@ -1,0 +1,492 @@
+/* Shared panel typography. Explicit control sizes win over music-app's
+   font: inherit reset without changing the scene or the shared palette. */
+.music-panel {
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.music-panel :is(button, input, select, textarea) {
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.music-panel .panel-heading h2 {
+  font-size: 22px;
+  line-height: 1.3;
+  font-weight: 500;
+}
+
+.music-panel .panel-heading small {
+  font-size: 11px;
+}
+
+.music-panel .panel-heading > button {
+  flex: 0 0 36px;
+  min-height: 36px;
+  font-size: 29px;
+  line-height: 1;
+}
+
+.music-panel :is(.panel-section h3, .quality-heading h3) {
+  margin: 0 0 12px;
+  font-size: 14px;
+  line-height: 1.5;
+  font-weight: 500;
+  letter-spacing: 0;
+}
+
+.music-panel :is(h4, .introduction-ai h4) {
+  font-size: 13px;
+  line-height: 1.6;
+  font-weight: 500;
+}
+
+.music-panel :is(p, .panel-intro, .quality-summary, .quality-note, .scan-status) {
+  font-size: 12px;
+  line-height: 1.8;
+  overflow-wrap: anywhere;
+}
+
+.music-panel :is(small, .field-label span, .settings-row small,
+  .quality-control small, .quality-heading h3 span,
+  .quality-advanced summary span, .introduction-ai h4 > small,
+  .introduction-ai-entries small, .introduction-sources small) {
+  font-size: 11px;
+  line-height: 1.65;
+}
+
+.music-panel :is(.field-label, .settings-row, .quality-control,
+  .theme-cards strong, .introduction-ai-file, .introduction-ai-steps strong) {
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.music-panel :is(.panel-section a, .text-button, .panel-actions > button:not(.primary-button)) {
+  font-size: 12px;
+}
+
+.music-panel :is(.text-button, .panel-actions > button) {
+  min-height: 36px;
+  line-height: 1.6;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+
+.music-panel .text-button {
+  margin: 8px 16px 0 0;
+}
+
+.music-panel .primary-button {
+  font-size: 13px;
+}
+
+.music-panel .panel-actions {
+  flex-wrap: wrap;
+  gap: 8px 18px;
+}
+
+.music-panel .field-label {
+  flex-wrap: wrap;
+  gap: 4px 12px;
+}
+
+.music-panel :is(input[type="text"], input[type="url"], input[type="search"], textarea) {
+  min-width: 0;
+  font-size: 13px;
+}
+
+.music-panel .json-editor,
+.music-panel .introduction-ai textarea {
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.music-panel .settings-row {
+  gap: 16px;
+  margin: 18px 0;
+}
+
+.music-panel :is(.settings-row, .quality-control) > span {
+  min-width: 0;
+  flex: 1 1 0;
+  overflow-wrap: anywhere;
+}
+
+.music-panel :is(.settings-row, .quality-settings) select {
+  min-height: 36px;
+  min-width: 116px;
+  max-width: 52%;
+  font-size: 13px;
+}
+
+.music-panel .settings-row input[type="checkbox"] {
+  flex: 0 0 18px;
+  width: 18px;
+  height: 18px;
+  margin: 0;
+}
+
+.music-panel .settings-row input[type="range"] {
+  flex: 0 1 150px;
+  min-width: 90px;
+  max-width: 46%;
+}
+
+.music-panel summary {
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+}
+
+.music-panel .panel-section {
+  padding: 22px 0;
+}
+
+.music-panel details.panel-section > summary {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.music-panel details.panel-section[open] > summary {
+  margin-bottom: 16px;
+}
+
+.music-panel .theme-cards {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.music-panel .theme-cards button {
+  min-width: 0;
+  padding: 12px;
+}
+
+.music-panel .theme-cards span {
+  font-size: 11px;
+  line-height: 1.65;
+}
+
+.music-panel .quality-settings {
+  margin: 0;
+  padding: 22px 0;
+}
+
+.music-panel .quality-heading h3 {
+  margin: 0;
+}
+
+.music-panel .quality-heading {
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.music-panel .quality-heading h3 span {
+  display: inline-block;
+}
+
+.music-panel .quality-control {
+  gap: 16px;
+}
+
+.music-panel .quality-range > div {
+  flex: 0 1 auto;
+  min-width: 0;
+  gap: 10px;
+}
+
+.music-panel .quality-range input {
+  width: 150px;
+  min-width: 72px;
+}
+
+.music-panel .quality-range output {
+  font-size: 13px;
+}
+
+.music-panel .quality-advanced summary {
+  font-size: 13px;
+}
+
+.music-panel .library-metrics {
+  margin: 18px 0 0;
+}
+
+.music-panel .library-metrics > div {
+  flex-wrap: wrap;
+  gap: 4px 10px;
+}
+
+.music-panel .library-metrics b {
+  font-size: 26px;
+}
+
+.music-panel .library-metrics span {
+  font-size: 11px;
+}
+
+.music-panel .library-display-note {
+  margin-top: 22px;
+}
+
+.music-panel .library-display-note h4 {
+  margin: 0 0 8px;
+}
+
+.music-panel .library-display-note p {
+  margin: 0;
+}
+
+.music-panel .library-display-note p + p {
+  margin-top: 8px;
+}
+
+.music-panel .library-display-note .text-button {
+  margin-top: 12px;
+}
+
+.music-panel .scan-status:empty {
+  padding: 0;
+  margin: 0;
+}
+
+.music-panel progress {
+  width: 100%;
+  margin-top: 12px;
+}
+
+.music-panel .introduction-ai {
+  margin-top: 18px;
+  padding-top: 18px;
+}
+
+.music-panel .introduction-ai-file input,
+.music-panel .introduction-sources li {
+  font-size: 11px;
+}
+
+.music-panel .introduction-ai-file input::file-selector-button {
+  min-height: 36px;
+  font: inherit;
+  font-size: 12px;
+}
+
+.music-panel .introduction-ai [data-intro-batch-number] {
+  flex: 0 0 76px;
+  min-height: 36px;
+  font-size: 13px;
+}
+
+.music-panel .introduction-ai-steps {
+  padding-left: 20px;
+}
+
+.music-panel .introduction-ai-steps > li::marker {
+  font-size: 11px;
+}
+
+.music-panel :is(.introduction-ai-status, .introduction-ai-copy,
+  .introduction-ai-entries summary, .introduction-sources a) {
+  font-size: 12px;
+}
+
+/* Keep the header and tabs in place; the two pages retain their own scroll
+   positions and mounted form state. Only the selected page participates in layout. */
+.music-panel.music-settings-panel {
+  display: flex;
+  flex-direction: column;
+  width: min(700px, 100%);
+  height: min(800px, calc(100% - 20px));
+  min-height: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+.music-settings-panel > .panel-heading {
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 26px 30px 18px;
+}
+
+.music-settings-panel .settings-tabs {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 24px;
+  margin: 0 30px;
+  border-bottom: 1px solid var(--line);
+}
+
+.music-panel .settings-tabs > button {
+  position: relative;
+  min-height: 44px;
+  padding: 10px 0 12px;
+  font-size: 14px;
+  color: var(--muted);
+  text-align: center;
+  transition: color calc(160ms * var(--music-motion-scale, 1)) ease;
+}
+
+.music-panel .settings-tabs > button[aria-selected="true"] {
+  color: var(--ink);
+  font-weight: 500;
+}
+
+.music-panel .settings-tabs > button[aria-selected="true"]::after {
+  content: "";
+  position: absolute;
+  right: 0;
+  bottom: -1px;
+  left: 0;
+  height: 2px;
+  background: var(--accent);
+}
+
+.music-settings-panel .settings-pages {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.music-settings-panel .settings-page {
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+  padding: 0 30px 26px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: var(--muted) transparent;
+}
+
+.music-settings-panel .settings-page > .panel-section:last-child {
+  border: 0;
+}
+
+.music-settings-panel #genre-editor-panel {
+  padding-top: 20px;
+}
+
+.music-settings-panel #genre-editor-panel .panel-heading {
+  margin: 12px 0;
+}
+
+.music-settings-panel #genre-editor-panel > h3,
+.music-settings-panel #genre-editor-panel .panel-heading h3 {
+  font-size: 14px;
+}
+
+.music-app.reduce-motion .music-panel .settings-tabs > button {
+  transition: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .music-panel .settings-tabs > button {
+    transition: none;
+  }
+}
+
+@media (max-width: 600px) {
+  .music-settings-panel > .panel-heading {
+    padding: 20px 20px 14px;
+  }
+
+  .music-settings-panel .settings-tabs {
+    gap: 22px;
+    margin: 0 20px;
+  }
+
+  .music-settings-panel .settings-page {
+    padding: 0 20px 20px;
+  }
+
+  .music-panel :is(.text-button, .panel-actions > button,
+    .panel-heading > button, .settings-row select, .quality-settings select) {
+    min-height: 44px;
+  }
+
+  .music-panel :is(.quality-control, .settings-row) {
+    gap: 12px;
+  }
+
+  .music-panel .quality-range input {
+    width: 110px;
+  }
+}
+
+@media (max-width: 430px) {
+  .music-panel .settings-row:has(select),
+  .music-panel .settings-row:has(input[type="range"]),
+  .music-panel .quality-control {
+    flex-wrap: wrap;
+  }
+
+  .music-panel .settings-row:has(select) > span,
+  .music-panel .settings-row:has(input[type="range"]) > span,
+  .music-panel .quality-control > span {
+    flex-basis: 100%;
+  }
+
+  .music-panel :is(.settings-row, .quality-settings) select {
+    max-width: 100%;
+  }
+
+  .music-panel .settings-row input[type="range"] {
+    flex-basis: 100%;
+    width: 100%;
+    max-width: none;
+    min-height: 28px;
+  }
+
+  .music-panel .quality-range > div {
+    width: 100%;
+  }
+
+  .music-panel .quality-range input {
+    flex: 1 1 auto;
+    width: 100%;
+    min-height: 28px;
+  }
+
+  .music-panel .quality-advanced summary span {
+    display: block;
+    margin-left: 17px;
+  }
+
+  .music-panel .theme-cards {
+    gap: 8px;
+  }
+
+  .music-panel .theme-cards button {
+    padding: 10px;
+  }
+
+  .music-panel .library-metrics b {
+    font-size: 22px;
+  }
+}
+
+@media (max-height: 500px) {
+  .music-panel.music-settings-panel {
+    height: 100%;
+    max-height: 100%;
+  }
+
+  .music-settings-panel > .panel-heading {
+    padding-top: 12px;
+    padding-bottom: 8px;
+  }
+
+  .music-settings-panel .panel-heading h2 {
+    margin-top: 2px;
+  }
+
+  .music-panel .settings-tabs > button {
+    min-height: 40px;
+    padding-top: 8px;
+    padding-bottom: 8px;
+  }
+}

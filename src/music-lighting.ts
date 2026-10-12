@@ -8,7 +8,7 @@ export type { RowLightingMode, RowLightingSettings } from "./music-row-lighting.
 
 /** Side key plus a bounded approximation of light scattered inside the CD shell. */
 export class MusicSelectionLighting {
-  readonly spot = new THREE.SpotLight("#ffe3b2", 180 * 64, 0, 0.32, 0.95, 2);
+  readonly spot = new THREE.SpotLight("#ffe3b2", 70 * 64, 0, 0.32, 0.95, 2);
   readonly area = new THREE.RectAreaLight("#ffe3b2", 0, 39, 0.18);
   private experiment: RowLightingSettings = { ...DEFAULT_ROW_LIGHTING };
   // x: mode, y: strength, z: width in rows, w: offset in rows. Every material
@@ -16,7 +16,9 @@ export class MusicSelectionLighting {
   private readonly rowSettings = { value: new THREE.Vector4(0, 1, 1, 0) };
   private readonly rowDetail = { value: 0 };
   private readonly rowFill = { value: 1 };
-  private readonly areaThemeIntensity = { value: 34 };
+  private readonly rowDayMix = { value: 0 };
+  private readonly areaThemeIntensity = { value: 18 };
+  private readonly spotThemeIntensity = { value: 70 * 64 };
   private readonly areaAim = new THREE.Vector3();
   private readonly worldOrigin = new THREE.Vector3();
   private readonly aim = new THREE.Vector3();
@@ -35,8 +37,8 @@ export class MusicSelectionLighting {
   private rowBasisLane = 0;
   private independentColumns = false;
   private readonly scatterColor = { value: new THREE.Color("#ffdba3") };
-  private readonly scatterStrength = { value: 1 };
-  private readonly printAmbient = { value: 0.5 };
+  private readonly scatterStrength = { value: 0.12 };
+  private readonly printAmbient = { value: 0.94 };
   private readonly shellBounds = { value: new THREE.Vector4(
     MUSIC_MODEL.center.x - MUSIC_MODEL.width / 2,
     MUSIC_MODEL.center.y - MUSIC_MODEL.height / 2,
@@ -63,7 +65,7 @@ export class MusicSelectionLighting {
     const { mode, strength, width, offset, fill } = this.experiment;
     this.rowSettings.value.set(ROW_LIGHTING.modes[mode], strength, width, offset);
     this.rowFill.value = fill;
-    this.updateAreaIntensity();
+    this.updateSourceIntensities();
   }
 
   getExperiment(): RowLightingSettings { return { ...this.experiment }; }
@@ -83,29 +85,43 @@ export class MusicSelectionLighting {
       opening: this.rowIntro, position: this.rowColumn.value.toArray() };
   }
 
-  private updateAreaIntensity() {
+  private updateSourceIntensities() {
     const { mode, strength } = this.experiment;
+    // The advanced strength remains the stored/user-facing value. Only the
+    // moving ribbon receives daylight compensation, on the shared theme clock.
+    const effectiveStrength = strength * (1 + (this.experiment.dayGain - 1) * this.rowDayMix.value);
+    this.rowSettings.value.y = effectiveStrength;
     const gain = mode === "area" ? 1 : mode === "hybrid" ? 0.3 : 0;
-    this.area.intensity = this.areaThemeIntensity.value * strength * gain * (1 - this.rowDetail.value);
+    this.area.intensity = this.areaThemeIntensity.value * effectiveStrength * gain * (1 - this.rowDetail.value);
+    // Keep the shelf's broad source steady while a case enters or leaves detail.
+    // Day uses the former inspection level throughout, avoiding a global dip.
+    this.spot.intensity = this.spotThemeIntensity.value;
   }
 
   setTheme(theme: "day" | "night" | "dusk", key: THREE.DirectionalLight, transition?: ThemeTransition) {
     const night = theme === "night";
+    const day = theme === "day";
     const targets = transition ?? new ThemeTransition();
-    targets.number(this.scene, "environmentIntensity", night ? 0.16 : 0.25);
-    targets.number(key, "intensity", night ? 0.30 : 0.45);
+    targets.number(this.rowDayMix, "value", day ? 1 : 0);
+    targets.number(this.scene, "environmentIntensity", night ? 0.16 : day ? 0.30 : 0.25);
+    targets.number(key, "intensity", night ? 0.30 : day ? 0.38 : 0.45);
     for (const child of this.scene.children) {
-      if (child instanceof THREE.HemisphereLight) targets.number(child, "intensity", night ? 0.21 : 0.32);
+      if (child instanceof THREE.HemisphereLight) targets.number(child, "intensity", night ? 0.21 : day ? 0.70 : 0.32);
       if (child instanceof THREE.DirectionalLight && child !== key) targets.number(child, "intensity", 0.045);
     }
     targets.color(this.spot.color, night ? "#dbe9ff" : "#ffe3b2");
     targets.color(this.area.color, night ? "#dbe9ff" : "#ffe3b2");
-    targets.number(this.areaThemeIntensity, "value", night ? 24 : 34);
-    targets.number(this.spot, "intensity", (night ? 130 : 180) * 64);
+    targets.number(this.areaThemeIntensity, "value", night ? 24 : day ? 18 : 34);
+    targets.number(this.spotThemeIntensity, "value", (night ? 130 : day ? 70 : 180) * 64);
     targets.color(this.scatterColor.value, night ? "#cee5ff" : "#ffdba3");
-    targets.number(this.scatterStrength, "value", night ? 0.72 : 1);
-    targets.number(this.printAmbient, "value", night ? 0.12 : theme === "dusk" ? 0.38 : 0.5);
-    if (!transition) targets.finish();
+    targets.number(this.scatterStrength, "value", night ? 0.72 : day ? 0.12 : 1);
+    // Pale surroundings need readable diffuse neighbors, not a brighter peak.
+    // The existing shader still caps every row at its incoming printed color.
+    targets.number(this.printAmbient, "value", night ? 0.12 : day ? 0.94 : 0.38);
+    if (!transition) {
+      targets.finish();
+      this.updateSourceIntensities();
+    }
   }
 
   /** Diffuse printed art shares the moving light field, never the shell's glow.
@@ -222,7 +238,7 @@ export class MusicSelectionLighting {
       float rowLight = exp(-rowDistance * rowDistance);
       float hotDistance = (vMusicOrigin.z - musicLightColumn.z) / 1.1;
       float hotLight = exp(-hotDistance * hotDistance);
-      // The reference has a warm local ribbon, not uniformly glowing spines.
+      // The reference has a local ribbon, not uniformly glowing spines.
       float neighborDistance = (vMusicOrigin.z - musicLightColumn.z) / 2.4;
       float neighborLight = exp(-neighborDistance * neighborDistance);
       float guidedLight = 0.58 * coreLight * mix(0.12, 1.0, rowLight)
@@ -238,7 +254,7 @@ export class MusicSelectionLighting {
         float edgeScatter = ${spine ? '0.30' : '0.14'} * edgeTransport + ${spine ? '0.016' : '0.003'};
         outgoingLight += musicScatterColor * musicScatterStrength * guidedLight * edgeScatter * lowerLight;
         // A narrow glint at the top and the lit spine changes with viewing angle.
-        // Warm light stays on the glass; the independent cover has no such term.
+        // Scattered light stays on the glass; the print has no additive term.
         float ribbon = topRim * (0.22 + 0.78 * edgeTransport) + ${spine ? '0.18' : '0.035'} * edgeTransport * grazing;
         outgoingLight += musicScatterColor * musicScatterStrength * laneLight * hotLight * ribbon * 0.8;
       ` : ''}
@@ -290,7 +306,7 @@ export class MusicSelectionLighting {
     // disables its energy without changing NUM_RECT_AREA_LIGHTS / shader cache.
     this.area.visible = visible;
     this.rowDetail.value = THREE.MathUtils.smoothstep(detail, 0, 1);
-    this.updateAreaIntensity();
+    this.updateSourceIntensities();
     if (!visible) {
       this.initialized = false;
       this.resetRowMotion();

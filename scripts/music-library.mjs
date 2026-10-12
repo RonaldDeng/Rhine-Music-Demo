@@ -5,6 +5,7 @@ import { parseFile } from 'music-metadata'
 import { AlbumIntroductionProvider } from './album-introductions.mjs'
 import { QQCreditsProvider } from './qq-credits.mjs'
 import { readLocalCredits } from './local-music-credits.mjs'
+import { createIntroductionTask, previewIntroductionImport, hasExternalIntroduction, introductionEditionRevision, validateReconciliationResult, reconcileIntroductionResult, readIntroductionRevisionProofs, INTRODUCTION_HISTORY_LIMITS } from './album-introduction-exchange.mjs'
 
 const AUDIO_EXTENSIONS = new Set(['.ape', '.wv', '.wma', '.flac', '.wav', '.m4a', '.mp4', '.alac', '.dsf', '.dff', '.mp3', '.aac', '.aiff', '.aif', '.ogg', '.opus'])
 const BROWSER_EXTENSIONS = new Set(['.flac', '.wav', '.m4a', '.mp4', '.mp3', '.aac', '.ogg', '.opus'])
@@ -153,6 +154,8 @@ export class MusicLibraryStore {
     this.creditsStatus = { running: false, completed: 0, total: 0, updated: 0, notFound: 0, failed: 0 }
     this.lastMusicBrainzRequest = 0
     this.saveChain = Promise.resolve()
+    // Only revision and edition hashes are remembered, never extra private data.
+    this.introductionRevisionProofs = new Map()
   }
 
   async init() {
@@ -176,6 +179,80 @@ export class MusicLibraryStore {
     return this.saveChain
   }
 
+  assertNoIntroductionImport() {
+    if (this.introductionImportRunning) throw Object.assign(new Error('正在写入 AI 整理的介绍，请完成后再操作'), { status: 409 })
+    if (this.introductionReconcileRunning) throw Object.assign(new Error('正在重新核对旧介绍结果，请完成后再操作'), { status: 409 })
+  }
+
+  assertIntroductionExchangeIdle() {
+    this.assertNoIntroductionImport()
+    if (this.scanPromise || this.enrichPromise || this.introductionsPromise || this.creditsPromise || this.configUpdateCount) throw Object.assign(new Error('音乐库正在扫描或更新资料，请完成后再导入介绍'), { status: 409 })
+  }
+
+  introductionTask(options) {
+    const task = createIntroductionTask(this.index.albums.filter((album) => this.config.roots.includes(album._root)), options)
+    for (const album of task.albums) {
+      this.introductionRevisionProofs.delete(album.expectedRevision)
+      this.introductionRevisionProofs.set(album.expectedRevision, introductionEditionRevision(album))
+    }
+    while (this.introductionRevisionProofs.size > INTRODUCTION_HISTORY_LIMITS.revisions) this.introductionRevisionProofs.delete(this.introductionRevisionProofs.keys().next().value)
+    return task
+  }
+
+  async reconcileIntroductions(result) {
+    this.assertIntroductionExchangeIdle()
+    this.introductionReconcileRunning = true
+    try {
+      const entries = validateReconciliationResult(result)
+      await this.saveChain
+      const albums = this.index.albums.filter((album) => this.config.roots.includes(album._root))
+      const proofs = new Map(this.introductionRevisionProofs)
+      const preliminary = reconcileIntroductionResult(albums, result, proofs)
+      const unresolvedIds = new Set(preliminary.unresolved.map((entry) => entry.id))
+      const wanted = new Set(entries.filter((entry) => entry.status === 'matched' && unresolvedIds.has(entry.id) && !proofs.has(entry.expectedRevision)).map((entry) => entry.expectedRevision))
+      for (const [revision, edition] of await readIntroductionRevisionProofs(this.dataDir, wanted)) proofs.set(revision, edition)
+      return reconcileIntroductionResult(albums, result, proofs)
+    } finally { this.introductionReconcileRunning = false }
+  }
+
+  previewIntroductions(result, options) {
+    this.assertIntroductionExchangeIdle()
+    return previewIntroductionImport(this.index.albums.filter((album) => this.config.roots.includes(album._root)), result, options)
+  }
+
+  async importIntroductions(result, options) {
+    this.assertIntroductionExchangeIdle()
+    this.introductionImportRunning = true
+    try {
+      // Drain older writes, then validate the current records again. A preview
+      // grants no write token: edits between preview and apply must conflict.
+      await this.saveChain
+      const preview = previewIntroductionImport(this.index.albums.filter((album) => this.config.roots.includes(album._root)), result, options)
+      if (!preview.canApply) throw Object.assign(new Error(preview.counts.conflict ? '导入存在冲突，未写入任何条目' : '没有可写入的介绍'), { status: 409, preview })
+      const next = structuredClone(this.index)
+      const importedAt = timestamp()
+      const batchId = randomUUID()
+      const byId = new Map(next.albums.map((album) => [album.id, album]))
+      for (const entry of preview.entries) {
+        if (!['add', 'replace'].includes(entry.action)) continue
+        const album = byId.get(entry.id)
+        album.description = entry.description
+        album.descriptionSource = { ...entry.sources[0], references: structuredClone(entry.sources), method: 'external-ai', importedAt, batchId }
+        album.introduction = { status: 'matched', checkedAt: importedAt, method: 'external-ai' }
+      }
+      const backup = `library-index.before-introductions-${importedAt.replaceAll(':', '-')}-${batchId}.json`
+      // Both files use private permissions and atomic rename. Never change the
+      // in-memory library until a backup and the new index have been written successfully.
+      await writeJsonAtomic(path.join(this.dataDir, backup), this.index)
+      await writeJsonAtomic(path.join(this.dataDir, 'library-index.json'), next)
+      this.index = next
+      // A failed view notification cannot turn a committed import into a
+      // reported failure and invite an unnecessary second write.
+      try { this.onChange() } catch { /* The library API exposes the committed state. */ }
+      return { ...preview, imported: preview.counts.add + preview.counts.replace, backup, library: this.snapshot() }
+    } finally { this.introductionImportRunning = false }
+  }
+
   async reloadRules() {
     this.rules = validateRules(await readJson(path.join(this.dataDir, 'genre-rules.json'), DEFAULT_RULES))
   }
@@ -191,30 +268,34 @@ export class MusicLibraryStore {
   }
 
   async updateConfig(value) {
-    const next = { ...this.config }
-    if (value.roots !== undefined) next.roots = safeRootList(value.roots)
-    if (value.onlineEnabled !== undefined) {
-      if (typeof value.onlineEnabled !== 'boolean') throw new Error('onlineEnabled 必须为布尔值')
-      next.onlineEnabled = value.onlineEnabled
-    }
-    if (value.musicBrainzContact !== undefined) {
-      if (typeof value.musicBrainzContact !== 'string' || value.musicBrainzContact.length > 500 || /[\r\n]/.test(value.musicBrainzContact)) throw new Error('MusicBrainz 联系方式必须是邮箱或项目网址')
-      const contact = value.musicBrainzContact.trim()
-      if (contact && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contact) && !/^https?:\/\/\S+$/.test(contact)) throw new Error('请输入有效的联系邮箱或 http(s) 项目网址')
-      next.musicBrainzContact = contact
-    }
-    if (value.foobarBaseUrl !== undefined) {
-      if (!value.foobarBaseUrl) next.foobarBaseUrl = null
-      else {
-        const url = new URL(value.foobarBaseUrl)
-        if (url.protocol !== 'http:' || !['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname) || url.username || url.password || url.search || url.hash) throw new Error('foobar 仅允许本机 HTTP 地址，例如 http://127.0.0.1:8880')
-        next.foobarBaseUrl = url.origin
+    this.assertNoIntroductionImport()
+    this.configUpdateCount = (this.configUpdateCount ?? 0) + 1
+    try {
+      const next = { ...this.config }
+      if (value.roots !== undefined) next.roots = safeRootList(value.roots)
+      if (value.onlineEnabled !== undefined) {
+        if (typeof value.onlineEnabled !== 'boolean') throw new Error('onlineEnabled 必须为布尔值')
+        next.onlineEnabled = value.onlineEnabled
       }
-    }
-    await writeJsonAtomic(path.join(this.dataDir, 'config.json'), next)
-    this.config = next
-    this.musicBrainzContact = next.musicBrainzContact || this.environmentContact
-    return next
+      if (value.musicBrainzContact !== undefined) {
+        if (typeof value.musicBrainzContact !== 'string' || value.musicBrainzContact.length > 500 || /[\r\n]/.test(value.musicBrainzContact)) throw new Error('MusicBrainz 联系方式必须是邮箱或项目网址')
+        const contact = value.musicBrainzContact.trim()
+        if (contact && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contact) && !/^https?:\/\/\S+$/.test(contact)) throw new Error('请输入有效的联系邮箱或 http(s) 项目网址')
+        next.musicBrainzContact = contact
+      }
+      if (value.foobarBaseUrl !== undefined) {
+        if (!value.foobarBaseUrl) next.foobarBaseUrl = null
+        else {
+          const url = new URL(value.foobarBaseUrl)
+          if (url.protocol !== 'http:' || !['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname) || url.username || url.password || url.search || url.hash) throw new Error('foobar 仅允许本机 HTTP 地址，例如 http://127.0.0.1:8880')
+          next.foobarBaseUrl = url.origin
+        }
+      }
+      await writeJsonAtomic(path.join(this.dataDir, 'config.json'), next)
+      this.config = next
+      this.musicBrainzContact = next.musicBrainzContact || this.environmentContact
+      return next
+    } finally { this.configUpdateCount -= 1 }
   }
 
   snapshot() {
@@ -248,6 +329,7 @@ export class MusicLibraryStore {
   }
 
   async scan({ roots } = {}) {
+    this.assertNoIntroductionImport()
     if (this.scanPromise) return this.scanPromise
     this.scanStatus = { running: true, startedAt: timestamp() }
     this.scanPromise = (async () => {
@@ -480,6 +562,7 @@ export class MusicLibraryStore {
   }
 
   async enrich({ albumIds, force = false } = {}) {
+    this.assertNoIntroductionImport()
     if (this.enrichPromise) return this.enrichPromise
     if (albumIds !== undefined && (!Array.isArray(albumIds) || albumIds.some((id) => typeof id !== 'string'))) throw new Error('albumIds 必须是专辑 ID 数组')
     const selected = this.index.albums.filter((album) => !album.offline && (!albumIds || albumIds.includes(album.id)) && (force || !album.online?.checkedAt))
@@ -502,6 +585,7 @@ export class MusicLibraryStore {
   }
 
   async updateCredits({ albumIds, force = false } = {}) {
+    this.assertNoIntroductionImport()
     if (albumIds !== undefined && (!Array.isArray(albumIds) || albumIds.length > 10000 || albumIds.some((id) => typeof id !== 'string'))) throw new Error('albumIds 必须是专辑 ID 数组')
     if (typeof force !== 'boolean') throw new Error('force 必须为布尔值')
     if (this.creditsPromise) return this.creditsPromise
@@ -598,11 +682,13 @@ export class MusicLibraryStore {
   }
 
   async updateIntroductions({ albumIds, force = false } = {}) {
+    this.assertNoIntroductionImport()
     if (this.introductionsPromise) return this.introductionsPromise
     if (albumIds !== undefined && (!Array.isArray(albumIds) || albumIds.length > 10000 || albumIds.some((id) => typeof id !== 'string'))) throw new Error('albumIds 必须是专辑 ID 数组')
     if (typeof force !== 'boolean') throw new Error('force 必须为布尔值')
     const selected = this.index.albums.filter((album) => {
       if (!this.config.roots.includes(album._root) || (albumIds && !albumIds.includes(album.id))) return false
+      if (hasExternalIntroduction(album)) return false
       if (force) return true
       if (album.description && album.descriptionSource?.url) return false
       const cached = album.introduction
@@ -621,7 +707,7 @@ export class MusicLibraryStore {
           catch (error) { result = { status: 'error', checkedAt: timestamp(), error: error.message } }
           if (!['matched', 'not-found', 'uncertain', 'error'].includes(result?.status)) result = { status: 'error', checkedAt: timestamp(), error: '专辑介绍来源返回无效状态' }
           const current = this.index.albums.find((entry) => entry.id === album.id)
-          if (current && current.title === album.title && current.artist === album.artist && current.year === album.year) {
+          if (current && !hasExternalIntroduction(current) && current.title === album.title && current.artist === album.artist && current.year === album.year) {
             current.introduction = { status: result.status, checkedAt: result.checkedAt ?? timestamp(), ...(result.error ? { error: result.error } : {}), ...(result.candidateUrl ? { candidateUrl: result.candidateUrl } : {}) }
             if (result.status === 'matched' && result.description && result.descriptionSource?.url) {
               current.description = result.description
@@ -658,6 +744,7 @@ export class MusicLibraryStore {
   }
 
   async enrichAlbum(album) {
+    this.assertNoIntroductionImport()
     const checkedAt = timestamp()
     try {
       let releaseId = album.online?.releaseId
@@ -693,8 +780,8 @@ export class MusicLibraryStore {
       const online = { status: 'matched', releaseId, releaseGroupId, checkedAt, sourceUrl: `https://musicbrainz.org/release/${releaseId}` }
       let introduction
       try {
-        introduction = await this.albumIntroduction(group)
-        online.descriptionStatus = introduction ? 'available' : 'not-found'
+        if (!hasExternalIntroduction(album)) introduction = await this.albumIntroduction(group)
+        online.descriptionStatus = introduction || hasExternalIntroduction(album) ? 'available' : 'not-found'
       } catch (error) {
         online.descriptionStatus = 'error'
         online.descriptionError = error.message
@@ -705,7 +792,7 @@ export class MusicLibraryStore {
       current._onlineGenres = unique(genres)
       current.producers = uniqueProducers([...(current.producers ?? []).filter((person) => person.source !== 'MusicBrainz'), ...producers])
       current.online = online
-      if (introduction) Object.assign(current, introduction)
+      if (introduction && !hasExternalIntroduction(current)) Object.assign(current, introduction)
       Object.assign(album, { _onlineGenres: current._onlineGenres, producers: current.producers, online: current.online, description: current.description, descriptionSource: current.descriptionSource })
     } catch (error) {
       album.online = { ...album.online, status: 'error', checkedAt, error: error.message }

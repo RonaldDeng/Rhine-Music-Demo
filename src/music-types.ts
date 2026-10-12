@@ -31,6 +31,15 @@ export interface MusicProducer {
   url?: string;
 }
 
+export interface MusicIntroductionSource {
+  name: string;
+  url: string;
+  author?: string;
+  publishedAt?: string;
+  kind?: "official" | "editorial" | "reference";
+  license?: string;
+}
+
 export interface MusicAlbum {
   id: string;
   title: string;
@@ -38,11 +47,12 @@ export interface MusicAlbum {
   year?: number;
   discCount?: number;
   description?: string;
-  descriptionSource?: {
-    name: string;
-    url: string;
+  descriptionSource?: MusicIntroductionSource & {
     checkedAt?: string;
-    license?: string;
+    references?: MusicIntroductionSource[];
+    method?: "external-ai";
+    importedAt?: string;
+    batchId?: string;
   };
   localNote?: string;
   introduction?: {
@@ -50,6 +60,7 @@ export interface MusicAlbum {
     checkedAt?: string;
     error?: string;
     candidateUrl?: string;
+    method?: "external-ai";
   };
   genreId: string;
   rawGenres: string[];

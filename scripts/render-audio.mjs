@@ -11,8 +11,10 @@ const rate = 48000,
 const length = Math.round(rate * duration),
   tau = Math.PI * 2;
 const folder = "public/audio";
+// Only runtime stems belong in public; review audio and metrics stay local.
+const reviewFolder = ".tools/audio-render";
 fs.mkdirSync(folder, { recursive: true });
-fs.mkdirSync(".tools/audio-render", { recursive: true });
+fs.mkdirSync(reviewFolder, { recursive: true });
 const hz = (midi) => 440 * 2 ** ((midi - 69) / 12);
 let seed = 93271;
 const random = () =>
@@ -230,7 +232,7 @@ for (const [name, channels] of Object.entries(stems)) {
     rmsDb: 10 * Math.log10(square / (length * 2)),
     seamDelta: Math.max(...channels.map((c) => Math.abs(c[0] - c[length - 1]))),
   };
-  const file = path.join(".tools/audio-render", name + ".wav");
+  const file = path.join(reviewFolder, name + ".wav");
   wav(channels, file);
   if (process.argv[2])
     execFileSync(process.argv[2], [
@@ -246,24 +248,24 @@ for (const [name, channels] of Object.entries(stems)) {
       path.join(folder, name + ".ogg"),
     ]);
 }
-wav(mix, ".tools/audio-render/observatory.wav");
+wav(mix, path.join(reviewFolder, "observatory.wav"));
 if (process.argv[2])
   execFileSync(process.argv[2], [
     "-y",
     "-v",
     "error",
     "-i",
-    ".tools/audio-render/observatory.wav",
+    path.join(reviewFolder, "observatory.wav"),
     "-af",
     "afade=t=in:d=1,afade=t=out:st=50.833333:d=2.5",
     "-c:a",
     "libmp3lame",
     "-b:a",
     "192k",
-    path.join(folder, "observatory-preview.mp3"),
+    path.join(reviewFolder, "observatory-preview.mp3"),
   ]);
 fs.writeFileSync(
-  path.join(folder, "score.json"),
+  path.join(reviewFolder, "score.json"),
   JSON.stringify(
     {
       title: "Observatory / 观测室",

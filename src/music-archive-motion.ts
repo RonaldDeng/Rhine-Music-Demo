@@ -1,5 +1,6 @@
 import type { Spring } from "./motion.ts";
-import { COLUMN_SPACING, ROW_SPACING } from "./archive-loop.ts";
+import { ROW_SPACING } from "./archive-loop.ts";
+import { MUSIC_COLUMN_SPACING } from "./music-model.ts";
 
 export const ARCHIVE_TRACK_KEYS = ["rail", "column", "shoulder", "lane"] as const;
 export type ArchiveTrack = typeof ARCHIVE_TRACK_KEYS[number];
@@ -54,7 +55,7 @@ export class MusicArchiveMotion {
     // from either the preceding polynomial or the preceding spring sample.
     for (const key of ARCHIVE_TRACK_KEYS) Object.assign(this.states[key], tracks[key]);
     this.duration = musicArchiveTravelDuration(
-      (targets.column - tracks.column.value) / COLUMN_SPACING,
+      (targets.column - tracks.column.value) / MUSIC_COLUMN_SPACING,
       (targets.rail - tracks.rail.value) / ROW_SPACING,
     );
     this.elapsed = 0;

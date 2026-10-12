@@ -25,7 +25,7 @@ const page=await context.newPage();const errors=[];page.on('pageerror',e=>errors
 const ready=()=>page.waitForFunction(()=>window.rhine?.stats().ready&&document.documentElement.dataset.offlineReady==='true'&&navigator.serviceWorker.controller&&!document.querySelector('#loading'),null,{timeout:90000});
 const report={version:metadata.version,bytes:metadata.bytes,files:metadata.files.length,checks:[],errors};
 try{
- await page.goto('http://127.0.0.1:5191/?scene=archive');await ready();
+ await page.goto('http://127.0.0.1:5191/?original=1&scene=archive');await ready();
  const manifest=await page.evaluate(async()=>await(await fetch(document.querySelector('link[rel="manifest"]').href)).json());
  assert.equal(manifest.display,'standalone');assert.equal(manifest.scope,'./');assert.equal(manifest.icons.length,3);
  await page.evaluate(async()=>{await caches.open('unrelated-app');localStorage.setItem('rhine-saved','["X-001"]')});

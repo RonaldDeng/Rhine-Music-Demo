@@ -12,6 +12,7 @@ type LightingLabOptions = {
   enabled?: boolean;
   onChange?: (settings: LightingLabSettings) => void;
   onClose?: () => void;
+  onReplayScene?: () => void;
 };
 
 const defaults = DEFAULT_LIGHTING_PRESET;
@@ -42,7 +43,7 @@ const approaches: Record<
   },
 };
 
-const numericSettings = ["transitionDuration", "strength", "width", "offset", "fill"] as const;
+const numericSettings = ["transitionDuration", "strength", "dayGain", "width", "offset", "fill"] as const;
 
 /** Local, scene-independent controls. URL values take precedence over initial values. */
 export function setupLightingLab(
@@ -70,6 +71,12 @@ export function setupLightingLab(
     <button class="lighting-lab-close" type="button" aria-label="关闭光效调试面板" title="关闭面板，保留效果">×</button>
     </div>
     <div id="lighting-lab-controls" class="lighting-lab-controls">
+      <div class="lighting-lab-sliders">
+        <label for="lighting-lab-day-gain"><span>晨雾强度增益</span><output for="lighting-lab-day-gain"></output></label>
+        <input id="lighting-lab-day-gain" data-setting="dayGain" type="range" min="0" max="20" step="0.1" aria-label="晨雾强度增益，倍">
+        <p class="lighting-lab-timing-note">仅晨雾生效，1× 为原强度；即时生效并保存。</p>
+      </div>
+      <button class="lighting-lab-replay" type="button">仅重播三维入场 ↗</button>
       <div class="lighting-lab-modes" role="group" aria-label="光照方式">
         <button type="button" data-light="baseline" aria-pressed="false"><b>0</b> 原版</button>
         <button type="button" data-light="area" aria-pressed="false"><b>A</b> 条形灯</button>
@@ -165,7 +172,7 @@ export function setupLightingLab(
           ? `${value.toFixed(2)} 秒`
           : key === "fill"
           ? `${Math.round(value * 100)}%`
-          : key === "strength" || (key === "width" && areaMode)
+          : key === "strength" || key === "dayGain" || (key === "width" && areaMode)
             ? `${value.toFixed(2)}×`
             : `${key === "offset" && value > 0 ? "+" : ""}${value.toFixed(key === "width" ? 2 : 1)} 排`;
       panel.querySelector<HTMLOutputElement>(
@@ -234,6 +241,11 @@ export function setupLightingLab(
     stopCompare();
     Object.assign(settings, defaults);
     apply();
+  });
+  panel.querySelector<HTMLButtonElement>(".lighting-lab-replay")!.disabled = !options.onReplayScene;
+  panel.querySelector(".lighting-lab-replay")!.addEventListener("click", () => {
+    stopCompare();
+    options.onReplayScene?.();
   });
 
   compare.addEventListener("pointerdown", (event) => {

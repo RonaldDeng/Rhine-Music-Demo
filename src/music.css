@@ -1,12 +1,12 @@
 .music-app {
   --ink: #232722;
   --muted: #74786f;
-  --line: rgba(42, 49, 42, 0.18);
+  --line: rgba(42, 49, 42, 0.2);
   --accent: #b56834;
   --surface: #efede7;
-  --panel: rgba(245, 244, 239, 0.97);
+  --panel: rgba(245, 244, 239, 0.98);
   --page-bg: #e8e5e1;
-  --veil: rgba(236, 233, 225, 0.72);
+  --veil: rgba(236, 233, 225, 0.75);
   color: var(--ink);
   font-family: MiSans, system-ui, sans-serif;
 }
@@ -517,12 +517,18 @@
   top: var(--detail-content-top);
   bottom: 52px;
   overflow: auto;
+  /* Keep the reading measure identical for short and overflowing tabs. */
+  scrollbar-gutter: stable;
+  overflow-anchor: none;
   scrollbar-width: thin;
   scrollbar-color: var(--line) transparent;
   pointer-events: auto;
   padding-right: 9px;
   outline: none;
   overscroll-behavior: contain;
+}
+@supports not (scrollbar-gutter: stable) {
+  #album-detail-content { overflow-y: scroll; }
 }
 .detail-overline {
   display: flex;
@@ -532,6 +538,7 @@
   font-size: 8px;
   letter-spacing: 1.6px;
   margin-bottom: 18px;
+  min-height: 14px;
 }
 .detail-overline button {
   font-size: 9px;
@@ -547,7 +554,7 @@
   position: absolute;
   inset: 0;
   pointer-events: none;
-  background: linear-gradient(90deg, transparent 42%, var(--veil) 66%, var(--page-bg) 96%);
+  background: linear-gradient(90deg, transparent var(--music-browse-veil-start, 42%), var(--veil) 66%, var(--page-bg) 96%);
 }
 .music-app[data-layout="portrait"] .music-browse-veil {
   background: linear-gradient(180deg, transparent 28%, var(--page-bg) 62%);
@@ -561,7 +568,8 @@
 }
 .music-app[data-layout="desktop"] #album-detail-content,
 .music-app[data-layout="compact"] #album-detail-content {
-  left: 52%;
+  /* Reserve the right two fifths for the complete album document. */
+  left: 60%;
 }
 #album-detail-content > h1 {
   font-size: clamp(25px, 2.5vw, 39px);
@@ -638,7 +646,7 @@
   height: 2px;
   background: var(--ink);
   transform-origin: left;
-  transition: transform calc(180ms * var(--music-motion-scale, 1)) cubic-bezier(0.22, 1, 0.36, 1);
+  transition: transform calc(360ms * var(--music-motion-scale, 1)) cubic-bezier(0.22, 1, 0.36, 1);
   pointer-events: none;
 }
 .music-tabs > button > span {
@@ -919,7 +927,7 @@
 .producer-section .producer-source {
   display: block;
   margin-top: 4px;
-  color: #74786f;
+  color: var(--muted);
   font-size: 10.5px;
   font-weight: 400;
   letter-spacing: 0;
@@ -1216,6 +1224,9 @@
   display: block;
   height: 48px;
   margin-bottom: 10px;
+  background: linear-gradient(135deg, #ded3bd, #f0ede4);
+}
+.theme-cards .day i {
   background: linear-gradient(135deg, #ded3bd, #f0ede4);
 }
 .theme-cards .night i {
@@ -2421,10 +2432,10 @@
   color: var(--muted);
 }
 
-/* Reserve about 7/24 of the landscape view for the selected album's text. */
+/* Keep the title's left anchor and align its right edge with the header/footer. */
 .music-app:not([data-layout="portrait"]) .album-callout {
-  left: 68.633333%;
-  right: max(24px, 2.2%);
+  left: var(--music-callout-left);
+  right: var(--music-brand-right);
   max-width: none;
 }
 
@@ -2441,8 +2452,9 @@
 .music-app[data-layout="portrait"] .album-callout {
   top: auto;
   bottom: var(--callout-bottom, 135px);
-  left: clamp(23px, 4vw, 42px);
-  right: clamp(23px, 4vw, 42px);
+  left: var(--music-brand-left);
+  /* Compensate the panel padding so its content ends on the shared right edge. */
+  right: calc(var(--music-brand-right) - 12px);
   height: var(--portrait-callout-height);
   max-width: none;
   margin-left: -12px;

@@ -28,6 +28,7 @@ async function transpiledModuleUrl(url) {
 const { setMusicMotionSpeed } = await import(await transpiledModuleUrl(new URL('../src/music-motion-settings.ts', import.meta.url)));
 const { createTitleReels } = await import(await transpiledModuleUrl(new URL('../src/music-title-reels.ts', import.meta.url)));
 const { setupMusicRuler } = await import(await transpiledModuleUrl(new URL('../src/music-ruler.ts', import.meta.url)));
+const { MusicTrackFocus } = await import(await transpiledModuleUrl(new URL('../src/music-track-focus.ts', import.meta.url)));
 const settleMicrotasks = async () => { for (let i = 0; i < 8; i++) await Promise.resolve(); };
 
 function fixture(t) {
@@ -64,14 +65,17 @@ function fixture(t) {
     dataset = {};
     children = [];
     attrs = {};
-    classList = { add() {}, toggle() {} };
+    classList = { add() {}, toggle() {}, remove() {} };
+    listeners = new Map();
+    isConnected = true;
     ownerDocument = { timeline: { get currentTime() { return now; } } };
     appendChild(child) { this.children.push(child); }
     append(...children) { this.children.push(...children); }
     replaceChildren(...children) { this.children = children; }
     setAttribute(key, value) { this.attrs[key] = value; }
     removeAttribute(key) { delete this.attrs[key]; }
-    addEventListener() {}
+    addEventListener(name, listener) { this.listeners.set(name, listener); }
+    removeEventListener(name) { this.listeners.delete(name); }
     remove() {}
     focus() { document.activeElement = this; }
     animate(_frames, options) { return new TestAnimation(options); }
@@ -84,7 +88,7 @@ function fixture(t) {
     cancelAnimationFrame: id => frames.delete(id),
     setTimeout: (callback, delay = 0) => { timers.set(++nextId, { callback, at: now + delay }); return nextId; },
     clearTimeout: id => timers.delete(id),
-    window: { addEventListener() {} },
+    window: { addEventListener() {}, removeEventListener() {} },
     document: { hidden: false, createElement: () => new Element(), activeElement: null },
     getComputedStyle: element => ({ getPropertyValue: key => element.style.getPropertyValue(key) }),
   };
@@ -118,6 +122,75 @@ function fixture(t) {
   };
   return { Element, animations, advance, cleanups };
 }
+
+function trackFixture(f, initial = 0, rowPosition = 1000) {
+  const container = new f.Element(), row = new f.Element();
+  Object.assign(container, { scrollTop: initial, clientHeight: 400, scrollHeight: 1800,
+    querySelector: () => ({ offsetHeight: 40 }), getBoundingClientRect: () => ({ top: 0 }) });
+  Object.assign(row, { offsetHeight: 40, getBoundingClientRect: () => ({ top: rowPosition - container.scrollTop }) });
+  const focus = new MusicTrackFocus();
+  f.cleanups.push(() => focus.cancel());
+  return { container, row, focus };
+}
+
+test('track reveals use scaled time in both directions and preserve progress on a speed change', t => {
+  const f = fixture(t);
+  const positions = [];
+  for (const speed of [0.25, 1, 3]) {
+    setMusicMotionSpeed(speed);
+    const { container, row, focus } = trackFixture(f);
+    focus.reveal(container, row, false);
+    f.advance(200 / speed, 20);
+    positions.push(container.scrollTop);
+    focus.cancel();
+  }
+  assert.ok(positions[0] > 0 && positions[0] < 800);
+  positions.forEach(position => assert.ok(Math.abs(position - positions[0]) < 1e-6));
+
+  setMusicMotionSpeed(1);
+  const { container, row, focus } = trackFixture(f, 1200, 400);
+  focus.reveal(container, row, false);
+  f.advance(100, 10);
+  const before = container.scrollTop;
+  assert.ok(before < 1200 && before > 200, 'Upward reveal advances toward the same centered row');
+  setMusicMotionSpeed(0.25);
+  assert.equal(container.scrollTop, before, 'Retiming does not reset or jump the displayed scroll');
+  f.advance(100, 10);
+  assert.ok(container.scrollTop < before && container.scrollTop > 200);
+  setMusicMotionSpeed(3);
+  f.advance(300, 30);
+  assert.equal(container.scrollTop, 200);
+  assert.equal(document.activeElement, row);
+  assert.equal(f.animations.at(-1).playbackRate, 3, 'The target pulse shares the current global motion speed');
+});
+
+test('track reveal yields to manual input, replacement, removal and reduced motion', t => {
+  const f = fixture(t);
+  const { container, row, focus } = trackFixture(f);
+  focus.reveal(container, row, false);
+  f.advance(80, 8);
+  container.listeners.get('wheel')();
+  const manuallyStopped = container.scrollTop;
+  f.advance(1000, 20);
+  assert.equal(container.scrollTop, manuallyStopped);
+  assert.notEqual(document.activeElement, row, 'Cancelled reveals must not steal focus later');
+  assert.equal(container.listeners.size, 0);
+  focus.reveal(container, row, false);
+  f.advance(80, 8);
+  row.isConnected = false;
+  const detached = container.scrollTop;
+  f.advance(100, 10);
+  assert.equal(container.scrollTop, detached);
+  row.isConnected = true;
+  focus.reveal(container, row, false);
+  f.advance(80, 8);
+  focus.reveal(container, row, true);
+  assert.equal(container.scrollTop, 800);
+  assert.equal(document.activeElement, row);
+  assert.equal(f.animations.length, 0, 'Reduced motion replaces pending movement without a pulse animation');
+  f.advance(1100);
+  assert.equal(container.listeners.size, 0);
+});
 
 const glyph = text => ({ key: 'main:0', text, kind: 'main', x: 0, y: 0, width: 20, height: 24, font: '24px serif', letterSpacing: '0px' });
 

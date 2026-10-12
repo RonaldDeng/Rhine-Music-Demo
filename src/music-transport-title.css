@@ -1,6 +1,6 @@
 /* Growing this slot moves every preceding control left while playback stays put. */
 .music-topnav {
-  --song-cap: clamp(0px, calc(100vw - 760px), 240px);
+  --song-cap: clamp(0px, calc(100vw - 760px - var(--song-transition-slot, 0px)), 240px);
   flex-shrink: 0;
 }
 .music-topnav .minimal-transport button.transport-track {
@@ -66,11 +66,11 @@
   white-space: pre;
 }
 @media (max-width: 1100px) {
-  .music-topnav { --song-cap: clamp(0px, calc(100vw - 610px), 180px); }
+  .music-topnav { --song-cap: clamp(0px, calc(100vw - 610px - var(--song-transition-slot, 0px)), 180px); }
   .transport-track > span { font-size: 11px; }
 }
 @media (max-width: 700px) {
-  .music-topnav { --song-cap: clamp(0px, calc(100vw - 340px), 100px); }
+  .music-topnav { --song-cap: clamp(0px, calc(100vw - 340px - var(--song-transition-slot, 0px)), 100px); }
   .music-topnav .minimal-transport button.transport-track { margin-right: -1px; }
   .transport-track > span { font-size: 10px; }
 }

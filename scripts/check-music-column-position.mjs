@@ -4,6 +4,7 @@ import ts from 'typescript';
 import { setMusicAlbums, records, archiveColumns, columnFiles, fileLocation } from '../src/data.ts';
 import { fileAtCell, nearestOccurrence, selectionCell, wrap } from '../src/archive-loop.ts';
 import { normalizeMusicArrayMode } from '../src/music-array-layout.ts';
+import { musicArtistKey } from '../src/music-order.ts';
 
 // Execute the production preference, change handler and navigation functions.
 // Only browser storage, presentation/scene ports and markup dependencies are mocked.
@@ -31,8 +32,6 @@ function eventBranch(event, condition) {
 const normalize = tree.statements.find(node => ts.isExpressionStatement(node) &&
   ts.isBinaryExpression(node.expression) && node.expression.left.getText(tree) === 'preferences.rememberColumnPosition');
 assert.ok(normalize, 'Loaded column-position preference is normalized');
-const settings = tree.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === 'renderSettingsPanel');
-const settingsMarkup = settings.body.statements[0].getText(tree);
 
 const groups = [6, 3, 1].map((count, lane) => ({ id: `genre-${lane}`, name: `Column ${lane}`, count }));
 setMusicAlbums(groups.flatMap(group => Array.from({ length: group.count }, (_, index) => ({
@@ -43,7 +42,7 @@ setMusicAlbums(groups.flatMap(group => Array.from({ length: group.count }, (_, i
 function fixture(saved) {
   const storage = new Map(saved === undefined ? [] : [['rhine-music-preferences', JSON.stringify(saved)]]);
   const localStorage = { getItem: key => storage.get(key) ?? null, setItem: (key, value) => storage.set(key, value) };
-  const calls = { select: [], scene: [], effect: [], cancelReveal: 0, collapse: 0, overview: [], cells: [] };
+  const calls = { select: [], scene: [], effect: [], cancelReveal: 0, collapse: 0, overview: [], expanded: [], cells: [] };
   const scene = { musicBrowseRow: 31.2,
     columnRows: new Map(),
     musicBrowseRowForColumn(lane) { return this.columnRows.get(lane) ?? this.musicBrowseRow; },
@@ -52,7 +51,8 @@ function fixture(saved) {
     musicColumnCell(lane, row) { calls.cells.push([lane, row]); return { lane: lane + 6, row }; },
   };
   const buttons = ['prev', 'next', 'prev', 'next'].map(action => ({ dataset: { action }, disabled: false }));
-  const stage = { dataset: {}, querySelectorAll: () => buttons };
+  const detailNavigation = { hidden: false };
+  const stage = { dataset: {}, querySelectorAll: () => buttons, querySelector: () => detailNavigation };
   const code = `
     ${variable('read')}
     ${variable('save')}
@@ -66,14 +66,18 @@ function fixture(saved) {
         calls.select.push({ ...request, openAfter });
         if (this.queue) this.pendingSelection = request;
       } };
-    const overviewUI = { collapse: () => calls.collapse++, canEnter: () => true };
+    const overviewUI = { collapse: () => calls.collapse++, expand: lane => calls.expanded.push(lane), canEnter: () => true };
     const setOverview = value => calls.overview.push(value);
     const cancelTrackReveal = () => calls.cancelReveal++;
     const updateSelection = () => syncAlbumNavigation(), effects = { play: value => calls.effect.push(value) };
-    ${['savePrefs', 'commitSelection', 'select', 'navigationSelection', 'syncAlbumNavigation', 'resolveColumnSelection', 'stepAlbum', 'stepGenre', 'setMode'].map(functionSource).join('\n')}
+    ${['savePrefs', 'commitSelection', 'select', 'navigationSelection', 'syncAlbumNavigation', 'resolveColumnSelection', 'selectOverviewColumn', 'stepAlbum', 'stepGenre', 'setMode'].map(functionSource).join('\n')}
     function change(checked) {
       const el = { id: 'remember-column-position', checked };
       ${eventBranch('change', 'el.id === "remember-column-position"')}
+    }
+    function focusColumn(lane) {
+      const target = { dataset: { overviewLane: String(lane) } };
+      ${eventBranch('click', 'target.dataset.overviewLane !== undefined')}
     }
     function enter(lane) {
       const target = { dataset: { overviewEnterLane: String(lane) } };
@@ -84,22 +88,20 @@ function fixture(saved) {
       ${eventBranch('change', 'el.id === "music-array-mode"')}
     }
     function markup() {
-      const panel = { innerHTML: '' }, $ = () => panel;
-      const themeNames = { day: '暖昼', night: '深夜' }, sortLabels = { genre: { name: '按流派' }, artist: { name: '按歌手' }, album: { name: '按专辑名' } };
-      const audioOutputMarkup = () => '', qualityMarkup = () => '', renderQuality = {};
-      ${settingsMarkup}
-      return panel.innerHTML;
+      const sortLabels = { genre: { name: '按流派' }, artist: { name: '按歌手' }, album: { name: '按专辑名' } };
+      ${functionSource('libraryArrangementMarkup')}
+      return libraryArrangementMarkup();
     }
     syncAlbumNavigation();
-    return { preferences, columnMemory, presentation, change, enter, markup, arrayMode, setMode,
+    return { preferences, columnMemory, presentation, change, enter, focusColumn, markup, arrayMode, setMode,
       commitSelection, resolveColumnSelection, stepAlbum, stepGenre, selected: () => selected,
       setRebuilding(value) { libraryRebuilding = value; libraryIntent = undefined; },
       intent: () => libraryIntent };
   `;
-  const ports = new Function('localStorage', 'records', 'archiveColumns', 'columnFiles', 'fileLocation', 'fileAtCell', 'nearestOccurrence', 'wrap', 'scene', 'calls', 'stage', 'normalizeMusicArrayMode', transpile(code))(
-    localStorage, records, archiveColumns, columnFiles, fileLocation, fileAtCell, nearestOccurrence, wrap, scene, calls, stage, normalizeMusicArrayMode,
+  const ports = new Function('localStorage', 'records', 'archiveColumns', 'columnFiles', 'fileLocation', 'fileAtCell', 'nearestOccurrence', 'wrap', 'scene', 'calls', 'stage', 'normalizeMusicArrayMode', 'musicArtistKey', transpile(code))(
+    localStorage, records, archiveColumns, columnFiles, fileLocation, fileAtCell, nearestOccurrence, wrap, scene, calls, stage, normalizeMusicArrayMode, musicArtistKey,
   );
-  return { ...ports, scene, calls, storage, buttons };
+  return { ...ports, scene, calls, storage, buttons, detailNavigation };
 }
 
 for (const saved of [undefined, {}, { volume: .3 }, { rememberColumnPosition: undefined },
@@ -132,11 +134,11 @@ assert.equal(f.columnMemory.get(archiveColumns[1]), records[second[2]].id, 'Othe
 assert.equal(f.selected(), first[5]);
 let markup = f.markup();
 assert.match(markup, /id="remember-column-position"\s+checked/);
-assert.ok(markup.indexOf('高级设置 · 专辑阵列') < markup.indexOf('id="remember-column-position"'));
+assert.ok(markup.indexOf('排列与浏览') < markup.indexOf('id="remember-column-position"'));
 f.change(false); markup = f.markup();
 assert.doesNotMatch(markup.match(/<input[^>]+id="remember-column-position"[^>]*>/)[0], /\bchecked\b/);
-assert.match(markup, /关闭后保持画面深度，选中邻近专辑/);
-assert.match(markup, /各列独立居中；上下浏览到本列首尾时停止/);
+assert.match(markup, /关闭后选择该列当前位置附近的专辑/);
+assert.match(markup, /各列独立居中，浏览到首尾时停止/);
 
 // Filled shelves resolve the measured rendered row, even when the current
 // selected target and the row of its canonical album are somewhere else.
@@ -165,6 +167,35 @@ f.stepGenre(1);
 assert.equal(f.calls.select.at(-1).navigation.row, -2, 'Negative occurrences survive the directional navigation port');
 f.enter(1);
 assert.deepEqual(f.calls.select.at(-1).navigation, { cell: { lane: 7, row: -2 }, guided: true }, 'Overview entry uses the same negative physical row and guided cadence');
+
+// A name selects its column immediately while preserving the overview. The
+// separate arrow can leave overview mid-flight without issuing a second move.
+for (const rememberColumnPosition of [true, false]) for (const arrayMode of ['realistic', 'filled']) {
+  const named = fixture({ rememberColumnPosition, arrayMode });
+  named.columnMemory.set(archiveColumns[1], records[second[2]].id);
+  named.presentation.queue = true;
+  named.focusColumn(1);
+  const request = named.calls.select.at(-1);
+  assert.equal(fileLocation(request.index).lane, 1, 'Clicking a label selects that column');
+  if (rememberColumnPosition) assert.equal(request.index, second[2], 'Name clicks restore the same column memory as arrows');
+  assert.equal(request.openAfter, false, 'Name clicks never open album details');
+  assert.deepEqual(named.calls.overview, [], 'Name clicks remain in overview');
+  assert.deepEqual(named.calls.expanded, [1], 'The focused column exposes its separate near-view arrow');
+  named.focusColumn(1);
+  assert.equal(named.calls.select.length, 1, 'Repeated label clicks preserve the pending move');
+  named.enter(1);
+  assert.equal(named.calls.select.length, 1, 'Entering mid-flight does not retarget or restart the column');
+  assert.deepEqual(named.calls.overview, [false]);
+  named.commitSelection(request.index, request.navigation);
+  named.presentation.pendingSelection = undefined;
+  named.focusColumn(1);
+  assert.equal(named.calls.select.length, 1, 'The current column is stable after movement completes');
+  named.focusColumn(0);
+  assert.equal(fileLocation(named.calls.select.at(-1).index).lane, 0, 'A rapid reverse label click targets the new column');
+  const count = named.calls.select.length;
+  for (const invalid of [-1, 99, .5, NaN]) named.focusColumn(invalid);
+  assert.equal(named.calls.select.length, count, 'Invalid column labels never navigate');
+}
 
 // Pending requests have not reached scene.select yet. Their mixed input must
 // preserve the requested column, measured depth and any explicit physical cell.
@@ -293,4 +324,25 @@ const empty = fixture({ arrayMode: 'realistic' });
 assert.deepEqual(arrowState(empty), [true, true, true, true]);
 empty.stepAlbum(1);
 assert.equal(empty.calls.select.length, 0);
+// A singleton artist must not inherit a visible pair from unrelated albums in
+// the same genre/alphabetic column. Formatting aliases still share one artist.
+const navigationAlbums = [
+  ['solo', 'One', 'Solo'], ['pair-a', 'Two', '  Artist  A  '], ['pair-b', 'Three', 'ＡＲＴＩＳＴ A'],
+].map(([id, title, artist]) => ({ id, title, artist, genreId: 'shared', rawGenres: [], folder: '', tracks: [], producers: [], offline: false }));
+for (const sort of ['genre', 'artist', 'album']) {
+  setMusicAlbums(navigationAlbums, [{ id: 'shared', name: 'Shared' }], sort);
+  for (const arrayMode of ['realistic', 'filled']) {
+    const navigation = fixture({ arrayMode });
+    navigation.commitSelection(records.findIndex(record => record.id === 'solo'));
+    assert.equal(navigation.detailNavigation.hidden, true, `${sort}/${arrayMode}: singleton artist hides detail navigation`);
+    navigation.commitSelection(records.findIndex(record => record.id === 'pair-a'));
+    assert.equal(navigation.detailNavigation.hidden, false, `${sort}/${arrayMode}: normalized artist aliases retain navigation`);
+    navigation.commitSelection(records.findIndex(record => record.id === 'solo'));
+    assert.equal(navigation.detailNavigation.hidden, true, 'Returning from a multi-album artist hides both controls again');
+  }
+}
+setMusicAlbums([navigationAlbums[0]], [{ id: 'shared', name: 'Shared' }], 'artist');
+const filledSingleton = fixture({ arrayMode: 'filled' });
+assert.equal(filledSingleton.detailNavigation.hidden, true);
+assert.deepEqual(arrowState(filledSingleton), [true, true, true, true], 'Filled singleton columns cannot navigate to themselves');
 console.log('Column-position and finite browsing: persistence, target-column depth, coalesced rows, pending/committed/rebuild boundaries, side-effect-free limits, detail arrows, empty/single columns, live mode changes and filled/horizontal loops passed.');

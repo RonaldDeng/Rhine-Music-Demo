@@ -61,9 +61,9 @@
 }
 
 .music-app[data-layout="portrait"] .music-topnav {
-  --song-cap: clamp(0px, calc(100vw - 320px), 280px);
+  --song-cap: clamp(0px, calc(100vw - 286px - var(--song-transition-slot, 0px)), 280px);
   display: grid;
-  grid-template-columns: 28px 28px 104px 28px minmax(0, 1fr);
+  grid-template-columns: 28px 104px 28px minmax(0, 1fr);
   gap: 6px;
   width: 100%;
   min-width: 0;

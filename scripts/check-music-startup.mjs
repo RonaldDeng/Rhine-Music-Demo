@@ -64,7 +64,7 @@ function fixture({ renderScene = true, firstMs = 0, reduced = false, speed = 1, 
   const compiled = new Function('document', 'window', 'scene', 'boot', 'viewer', 'presentation', '$',
     'requestAnimationFrame', 'cancelAnimationFrame', 'MusicFrameTiming', 'config', 'calls', 'appVersion', `
     const performance = { now: () => config.cpuNow() };
-    const preferences = { reduced: config.reduced, theme: 'day' }, themeNames = { day: '暖昼' };
+    const preferences = { reduced: config.reduced, theme: 'day' }, themeNames = { day: '晨雾' };
     const stage = { dataset: {} }, getMusicMotionSpeed = () => config.speed;
     const updateOverview = () => {}, overviewRevealPending = false, overview = false;
     const overviewUI = { dispose: () => calls.dispose.overview++ };
@@ -103,7 +103,7 @@ assert.equal(steady.pending.size, 1);
 assert.equal(steady.state().timing.samples, 240);
 assert.equal(steady.state().timing.fps, 60);
 assert.equal(steady.state().timing.cpuP95, 2);
-assert.match(steady.elements.get('#runtime-info').textContent, /^6[01] FPS \/ 暖昼 \/ V/);
+assert.match(steady.elements.get('#runtime-info').textContent, /^6[01] FPS \/ 晨雾 \/ V/);
 assert.ok(steady.elements.get('#runtime-info').textContent.endsWith(` / V${appVersion}`));
 assert.equal(JSON.parse(steady.elements.get('#three-scene').dataset.frameTiming).fps, 60);
 
@@ -258,7 +258,7 @@ await latePreparingRequest;
 assert.equal(latePreparingLibrary.calls.received, 0, 'A response also checks readiness after awaiting the local service');
 assert.equal(latePreparingLibrary.timers.size, 0);
 
-function startupFixture({ waitAt, native = false, hidden = false } = {}) {
+function startupFixture({ waitAt, native = false, hidden = false, fontPreparation } = {}) {
   const gate = deferred(), reached = deferred(), pending = new Map(), calls = [];
   const wait = async stage => {
     calls.push(stage);
@@ -269,9 +269,12 @@ function startupFixture({ waitAt, native = false, hidden = false } = {}) {
     if (!elements.has(selector)) elements.set(selector, { dataset: {}, setAttribute() {}, remove() { calls.push('remove-loading'); } });
     return elements.get(selector);
   };
-  const compiled = new Function('wait', 'calls', 'pending', '$', 'native', 'hidden', `
-    const navigator = {}, document = { hidden, fonts: { load: async () => {} } };
+  const compiled = new Function('wait', 'calls', 'pending', '$', 'native', 'hidden', 'fontPreparation', `
+    const navigator = {}, document = { hidden, fonts: { load() { throw new Error('Startup cannot repeat unbounded font loads after preparation'); } } };
     const preferences = { arrayMode: 'realistic', theme: 'day', reduced: false, audioBackend: native ? 'coreaudio' : 'browser' };
+    const prepareGeneratedCoverFonts = fontPreparation
+      ? () => { calls.push('cover-fonts'); return fontPreparation(); }
+      : () => wait('cover-fonts');
     const lightingLab = false, location = { search: '' }, selected = 7, sortLabel = { column: '歌手' }, renderQuality = 1;
     const stage = { dataset: {}, classList: { toggle() {}, add() {} } };
     let frameDisposed = false, frameSuspended = false, frameHandle = 0, scene, ready = false;
@@ -289,10 +292,10 @@ function startupFixture({ waitAt, native = false, hidden = false } = {}) {
     }
     ${productionFunction('start')}
     return { start, dispose: () => { frameDisposed = true; }, state: () => ({ ready, frameHandle }) };
-  `)(wait, calls, pending, $, native, hidden);
+  `)(wait, calls, pending, $, native, hidden, fontPreparation);
   return { ...compiled, gate, reached, pending, calls };
 }
-for (const waitAt of ['library', 'model', 'prepare', 'audio']) {
+for (const waitAt of ['cover-fonts', 'library', 'model', 'prepare', 'audio']) {
   const startup = startupFixture({ waitAt, native: true });
   const starting = startup.start();
   await startup.reached.promise;
@@ -306,7 +309,7 @@ for (const waitAt of ['library', 'model', 'prepare', 'audio']) {
 }
 const browserStartup = startupFixture();
 await browserStartup.start();
-assert.deepEqual(browserStartup.calls, ['library', 'construct-scene', 'model', 'configure-scene', 'prepare', 'remove-loading', 'boot-start', 'resume-library'],
+assert.deepEqual(browserStartup.calls, ['cover-fonts', 'library', 'construct-scene', 'model', 'configure-scene', 'prepare', 'remove-loading', 'boot-start', 'resume-library'],
   'Browser playback loads the initial snapshot once, prepares graphics before the film, then resumes library polling without initializing native audio');
 assert.equal(browserStartup.pending.size, 1);
 const nativeStartup = startupFixture({ native: true });
@@ -317,12 +320,85 @@ await backgroundStartup.start();
 assert.equal(backgroundStartup.pending.size, 0, 'A startup completed in the background waits for visibility before scheduling the main RAF');
 assert.ok(!backgroundStartup.calls.includes('resume-library'), 'A startup completed in the background leaves polling to resumePage');
 
+// Connect the real font-preparation function to the real startup function.
+// A fake clock proves both FontFaceSet failure modes terminate, without
+// waiting on wall time or relying on the browser to reject a stalled request.
+const coverFontSource = await readFile(new URL('../src/generated-album-cover.ts', import.meta.url), 'utf8');
+const coverFontTree = ts.createSourceFile('generated-album-cover.ts', coverFontSource, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+const coverFontFunction = coverFontTree.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === 'prepareGeneratedCoverFonts');
+assert.ok(coverFontFunction);
+const coverFontCode = ts.transpileModule(coverFontFunction.getText(coverFontTree), {
+  compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext },
+}).outputText.replace(/^export /gm, '');
+const flushFont = async () => { for (let i = 0; i < 24; i++) await Promise.resolve(); };
+function fontFixture(mode) {
+  const load = deferred(), ready = deferred(), timers = new Map(), loads = [], fontCache = new Map();
+  let elapsed = 0, id = 0;
+  const fonts = {
+    load(font) {
+      loads.push(font);
+      if (mode === 'throw') throw new Error('Synthetic FontFaceSet failure');
+      return mode === 'load-pending' ? load.promise : mode === 'reject' ? Promise.reject(new Error('Synthetic missing font')) : Promise.resolve([]);
+    },
+    ready: mode === 'ready-pending' ? ready.promise : mode === 'ready-reject'
+      ? Promise.reject(new Error('Synthetic font readiness failure')) : Promise.resolve(),
+  };
+  const schedule = (callback, delay) => { const next = ++id; timers.set(next, { callback, at: elapsed + delay }); return next; };
+  const prepare = new Function('document', 'setTimeout', 'clearTimeout', 'cache',
+    `let fontsReady; ${coverFontCode}; return prepareGeneratedCoverFonts;`)(
+    mode === 'missing' ? {} : { fonts }, schedule, timer => timers.delete(timer), fontCache,
+  );
+  return { prepare, loads, timers, fontCache, resolve: () => { load.resolve([]); ready.resolve(); },
+    async advance(ms) {
+      elapsed += ms;
+      for (const [timer, job] of [...timers]) if (job.at <= elapsed) { timers.delete(timer); job.callback(); }
+      await flushFont();
+    } };
+}
+for (const mode of ['load-pending', 'ready-pending']) {
+  const font = fontFixture(mode), startup = startupFixture({ fontPreparation: font.prepare });
+  const starting = startup.start();
+  await flushFont();
+  assert.deepEqual(startup.calls, ['cover-fonts'], `${mode}: font metrics get an initial opportunity to settle`);
+  await font.advance(2499);
+  assert.deepEqual(startup.calls, ['cover-fonts'], `${mode}: startup waits through the bounded preparation window`);
+  await font.advance(1);
+  assert.ok(startup.calls.includes('library') && startup.state().ready,
+    `${mode}: a permanent font stall cannot block the library, renderer or opening beyond 2.5 seconds`);
+  await starting;
+  assert.equal(startup.pending.size, 1);
+  assert.deepEqual(font.loads.map(value => Number(value.split(' ')[0])), [400, 600, 700]);
+  const fallback = { canvasStillOwnedByCaller: true };
+  font.fontCache.set('fallback-bitmap', fallback);
+  font.resolve(); await flushFont();
+  assert.equal(font.fontCache.size, 0, 'Late fonts invalidate future bitmap requests');
+  assert.equal(fallback.canvasStillOwnedByCaller, true, 'Late fonts do not resize or destroy an in-use fallback bitmap');
+  assert.equal(font.timers.size, 0);
+  assert.equal(font.prepare(), font.prepare(), 'Font preparation remains one shared startup operation');
+  assert.equal(startup.calls.filter(stage => stage === 'library').length, 1, 'Late completion cannot restart startup');
+}
+for (const mode of ['ready', 'reject', 'ready-reject', 'throw', 'missing']) {
+  const font = fontFixture(mode), startup = startupFixture({ fontPreparation: font.prepare });
+  const starting = startup.start(); await flushFont();
+  assert.ok(startup.state().ready, `${mode}: settled or unavailable fonts continue without waiting for the deadline`);
+  await starting;
+  assert.equal(font.timers.size, 0, `${mode}: no redundant deadline remains after completion`);
+}
+const abandonedFont = fontFixture('load-pending');
+const abandonedStartup = startupFixture({ fontPreparation: abandonedFont.prepare });
+const abandonedStart = abandonedStartup.start(); await flushFont();
+abandonedStartup.dispose(); await abandonedFont.advance(2500); await abandonedStart;
+assert.deepEqual(abandonedStartup.calls, ['cover-fonts'], 'A font deadline cannot revive a disposed startup');
+assert.equal(abandonedStartup.pending.size, 0);
+abandonedFont.resolve(); await flushFont();
+assert.deepEqual(abandonedStartup.calls, ['cover-fonts'], 'Late font completion cannot revive a disposed startup either');
+
 // Execute the actual startup -> receiveLibrary -> applyLibrary chain with a
 // delayed renderer. A scan completes during that delay: the DOM/data and the
 // renderer's column snapshot must remain on the same library revision.
 function scanningStartupFixture() {
   const warm = deferred(), warming = deferred(), timers = new Map(), pending = new Map();
-  const calls = { requests: 0, sceneLoads: 0, sceneRefreshes: 0, visibleAlbumCount: 0 };
+  const calls = { requests: 0, sceneLoads: 0, sceneRefreshes: 0, visibleAlbumCount: 0, notifications: [] };
   const album = id => ({ id, title: id, artist: 'Artist', genreId: 'genre', tracks: [] });
   let backend = { albums: [album('first')], genres: [{ id: 'genre', name: 'Genre' }], scan: { running: true } };
   const request = async () => { calls.requests++; return structuredClone(backend); };
@@ -335,6 +411,7 @@ function scanningStartupFixture() {
   const schedule = (callback, delay) => { const id = ++timerId; timers.set(id, { callback, delay }); return id; };
   const compiled = new Function('warm', 'warming', 'timers', 'pending', 'calls', 'request', '$', 'schedule', `
     const navigator = {}, document = { hidden: false, fonts: { load: async () => {} } };
+    const prepareGeneratedCoverFonts = async () => {};
     const preferences = { arrayMode: 'realistic', sortMode: 'genre', theme: 'day', reduced: false, audioBackend: 'browser' };
     const lightingLab = false, lightingDemo = false, location = { search: '' }, sortLabel = { column: '流派' }, renderQuality = 1;
     const stage = { dataset: {}, classList: { toggle() {}, add() {} } };
@@ -347,10 +424,12 @@ function scanningStartupFixture() {
     const currentAlbum = () => albums[selected], orderMusicAlbums = items => [...items];
     const columnFiles = () => records.map((_, index) => index);
     const setMusicAlbums = items => { records.splice(0, records.length, ...items.map(album => ({ id: album.id, album }))); };
+    const overviewUI = { setArtists() {} }, overviewArtists = () => [];
     const presentation = { phase: 'archive', openingOrDetail: false, reset() {} };
     const browseTransition = { show() {}, hide() {} }, detailTransition = { hide() {} };
     const updateStatus = () => { calls.visibleAlbumCount = albums.length; };
-    const updateIntroductionStatus = () => {}, updateCreditsStatus = () => {}, notify = () => {};
+    const updateIntroductionStatus = () => {}, updateCreditsStatus = () => {};
+    const notify = message => { calls.notifications.push(message); };
     const cancelTrackReveal = () => {}, showBrowseSurface = () => {}, updateSelection = () => {};
     const fit = () => {}, syncSelectionMotion = () => {}, resetFrameTiming = () => {};
     const stepAlbum = () => {}, mountMusicWheelNavigation = () => {};
@@ -364,6 +443,8 @@ function scanningStartupFixture() {
       prepareMusicRenderer() { warming.resolve(); return warm.promise; }
     }
     ${productionFunction('albumWithoutCredits')}
+    ${productionFunction('albumWithoutSupplementalMetadata')}
+    ${productionFunction('introductionContentKey')}
     ${productionFunction('applyLibrary')}
     ${productionFunction('receiveLibrary')}
     ${productionFunction('loadLibrary')}
@@ -378,6 +459,7 @@ function scanningStartupFixture() {
 const scanningStartup = scanningStartupFixture();
 const scanningStart = scanningStartup.start();
 await scanningStartup.warming.promise;
+assert.deepEqual(scanningStartup.calls.notifications, [], 'The initial snapshot must load without entering the request-error fallback');
 assert.deepEqual(scanningStartup.state(), { ready: false, dataCount: 1, sceneCount: 1 });
 assert.equal(scanningStartup.timers.size, 0, 'The scan poll is held throughout renderer preparation');
 scanningStartup.finishScan();
@@ -392,6 +474,7 @@ assert.equal(scanningStartup.timers.size, 1, 'Ready startup explicitly resumes t
 assert.equal(scanningStartup.calls.sceneLoads, 1, 'Protecting the initial snapshot does not duplicate scene loading');
 scanningStartup.finishBoot();
 await scanningStartup.loadLibrary();
+assert.deepEqual(scanningStartup.calls.notifications, [], 'The post-opening refresh must complete without a swallowed fixture or request error');
 assert.deepEqual(scanningStartup.state(), { ready: true, dataCount: 3, sceneCount: 3 }, 'After handoff, the completed scan updates the data and actual applyLibrary scene-refresh path together');
 assert.equal(scanningStartup.calls.visibleAlbumCount, 3);
 assert.equal(scanningStartup.calls.sceneRefreshes, 1);
@@ -403,7 +486,7 @@ console.log(JSON.stringify({
   opaqueBootSignal: { callbacks: 601, sceneCallsWhileOpaque: 0, respected: true },
   hiddenResume: { hiddenSceneCalls: 0, hiddenContinuations: 0, resumedTextClockJumpSeconds: 0, repeatedResumeCycles: 300 },
   disposal: cache.calls.dispose,
-  asyncBoundaries: { lateLibraryResponses: 4, disposedStartupStages: 4, browserNativeInitCalls: 0 },
+  asyncBoundaries: { lateLibraryResponses: 4, disposedStartupStages: 5, browserNativeInitCalls: 0 },
   scanDuringPreparation: { heldAlbumCount: 1, synchronizedAfterHandoff: 3, sceneLoads: scanningStartup.calls.sceneLoads, sceneRefreshes: scanningStartup.calls.sceneRefreshes },
   scope: 'Production CPU control-flow and lifecycle regression only; does not measure GPU work or establish real-device frame rate.',
 }, null, 2));

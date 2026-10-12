@@ -1,0 +1,79 @@
+/* Only the warm daylight music panels use this polish. Keep the original UI and
+   the night theme's surfaces, native controls and palette unchanged. */
+.music-app[data-theme="day"] .music-panel {
+  /* An opaque base prevents the cover colours behind the scrim from tinting
+     different sections of the same panel. The palette layer still follows
+     the shared theme transition. */
+  background-color: #f5f4ef;
+  background-image: linear-gradient(var(--panel), var(--panel));
+  color-scheme: light;
+  scrollbar-color: color-mix(in srgb, var(--muted) 55%, transparent) transparent;
+}
+
+.music-app[data-theme="day"] .music-panel :is(select, textarea, input) {
+  color-scheme: light;
+  caret-color: var(--ink);
+  accent-color: var(--accent);
+}
+
+.music-app[data-theme="day"] .music-panel select,
+.music-app[data-theme="day"] .music-panel select option {
+  color: var(--ink);
+  background-color: var(--surface);
+  border-color: var(--line);
+}
+
+.music-app[data-theme="day"] .music-panel :is(textarea, input)::placeholder {
+  color: var(--muted);
+  opacity: 1;
+}
+
+/* Range inputs otherwise paint their browser-default white rectangle behind
+   the native track. Preserve the native filled track and thumb behaviour. */
+.music-app[data-theme="day"] .music-panel input[type="range"] {
+  background: transparent;
+}
+
+.music-app[data-theme="day"] .music-panel :is(button, a, input, textarea, select, summary):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+}
+
+.music-app[data-theme="day"] .music-panel :is(.quality-advanced, .panel-section) > summary::marker,
+.music-app[data-theme="day"] .music-panel #introduction-missing > summary::marker {
+  color: var(--muted);
+}
+
+/* Match both library-query progress rails to the same control surface. Their
+   fill remains the original warm-brown accent, including on disabled states. */
+.music-app[data-theme="day"] .music-panel progress {
+  appearance: none;
+  -webkit-appearance: none;
+  background: var(--surface);
+  color: var(--accent);
+  border: 0;
+  border-radius: 0;
+}
+.music-app[data-theme="day"] .music-panel progress::-webkit-progress-bar {
+  background: var(--surface);
+  border-radius: 0;
+}
+.music-app[data-theme="day"] .music-panel progress::-webkit-progress-value {
+  background: var(--accent);
+  border-radius: 0;
+}
+.music-app[data-theme="day"] .music-panel progress::-moz-progress-bar {
+  background: var(--accent);
+  border-radius: 0;
+}
+
+@media (forced-colors: active) {
+  .music-app[data-theme="day"] .music-panel {
+    background-image: none;
+    scrollbar-color: auto;
+  }
+  .music-app[data-theme="day"] .music-panel progress {
+    appearance: auto;
+    -webkit-appearance: auto;
+  }
+}

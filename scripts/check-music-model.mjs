@@ -69,10 +69,32 @@ for (const [axis, dimension] of [["x", "width"], ["y", "height"], ["z", "depth"]
   assert.ok(Math.abs(size[axis] - MUSIC_MODEL[dimension]) < 1e-6, `actual GLB ${dimension} matches the camera dimensions`);
 assert.ok(Math.abs(bounds.getCenter(new THREE.Vector3()).y - MUSIC_MODEL.center.y) < 1e-6);
 assert.ok(triangles <= 1200, "new construction stays below the shelf geometry budget");
-assert.equal(gltf.scene.children[0].userData.version, "0.4.0", "runtime loads the reconstructed native-size case");
+assert.equal(gltf.scene.children[0].userData.version, "0.4.3", "runtime loads the current V0.4.3 case");
+// Measure the exported vertices, not only the generator's declared sizes.
+const lidBounds = geometryBounds.get("Frosted_Polymer");
+const lidWidth = lidBounds.max.x - lidBounds.min.x;
+const spineWidth = lidBounds.min.x - bounds.min.x;
+assert.ok(Math.abs(size.x - 3.7 * 1.08) < 1e-6,
+  "actual case width is 8% wider than the previous 3.70-unit revision");
+assert.ok(lidWidth / size.y > 1.11 && lidWidth / size.y < 1.12,
+  "glass body remains compact after the requested 8% overall widening");
+assert.ok(Math.abs(spineWidth - 4.45 * (0.26 / 4.3)) < 1e-6,
+  "narrowing the glass preserves the binding's previous absolute width");
+assert.ok(Math.abs(lidBounds.min.x - MUSIC_CASE_LAYERS.spineRight) < 1e-6, "front lid joins the binding with no open seam");
+assert.ok(Math.abs(lidBounds.max.x - bounds.max.x) < 1e-6, "glass still reaches the outside edge");
+assert.ok(Math.abs(geometryBounds.get("Ivory_Edges").max.x - lidBounds.min.x - 0.003) < 1e-6,
+  "binding shoulder stays at the seam when the binding width changes");
+assert.deepEqual([MUSIC_COVER.width, MUSIC_COVER.height, MUSIC_COVER.x], [2.98, 2.98, 0.14],
+  "paper restores V0.1.1b's size and horizontal placement while retaining its recessed depth");
 assert.ok(MUSIC_COVER.z < geometryBounds.get("Frosted_Polymer").min.z - 0.02, "paper sits behind the front lid with a real air gap");
 assert.ok(MUSIC_COVER.z > MUSIC_CASE_LAYERS.rearFront + 0.04, "paper sits ahead of the rear tray");
-assert.ok(MUSIC_COVER.x - MUSIC_COVER.width / 2 > MUSIC_CASE_LAYERS.spineRight + 0.4, "cover leaves the high-frost spine unobstructed");
+const leftMargin = MUSIC_COVER.x - MUSIC_COVER.width / 2 - lidBounds.min.x;
+const rightMargin = lidBounds.max.x - MUSIC_COVER.x - MUSIC_COVER.width / 2;
+const verticalMargin = (size.y - MUSIC_COVER.height) / 2;
+assert.ok(leftMargin >= verticalMargin && rightMargin >= verticalMargin,
+  "narrower glass retains at least the vertical paper clearance on both sides");
+assert.ok(Math.abs(leftMargin - rightMargin) < 0.012,
+  "unchanged square artwork remains centred within the narrowed glass body");
 assert.ok(geometryBounds.get("Ivory_Edges").max.x < MUSIC_COVER.x - MUSIC_COVER.width / 2, "high-frost strip never covers artwork");
 assert.ok(MUSIC_COVER.x - MUSIC_COVER.width / 2 > bounds.min.x);
 assert.ok(MUSIC_COVER.x + MUSIC_COVER.width / 2 < bounds.max.x);
@@ -129,9 +151,19 @@ for (const theme of ["day", "night", "dusk", "day", "dusk", "night", "day"]) {
     if (clarity === 1 && theme !== "day")
       assert.ok(glass.roughness >= 0.26 && glass.roughness <= 0.28, "Night/dusk inspection keeps the new thin lid lightly frosted");
     const spine = state.get("Ivory_Edges");
-    assert.ok(spine.roughness >= 0.24 && spine.roughness <= 0.31, "spine preserves blurred background bands instead of averaging them into a flat strip");
+    const tray = state.get("Optical_Diffuser");
+    if (theme === "day") {
+      assert.ok(spine.roughness > tray.roughness && spine.roughness > glass.roughness,
+        "daytime high-frost spine diffuses the background more than the supporting tray and lid");
+      assert.ok(spine.transmission < tray.transmission && spine.thickness > tray.thickness,
+        "daytime high-frost spine is optically denser than the supporting tray");
+      assert.ok(spine.roughness < 0.6 && spine.transmission >= 0.6,
+        "daytime spine retains translucent volume rather than becoming an opaque white strip");
+    } else {
+      close(spine.roughness, 0.25, "night/dusk retain their accepted spine frosting");
+      close(spine.transmission, 0.88, "night/dusk retain their accepted spine transmission");
+    }
     assert.ok(spine.thickness > glass.thickness * 2 && spine.transmission < glass.transmission, "spine density comes from its optical depth while the lid stays light");
-    assert.ok(spine.transmission >= 0.84, "spine stays translucent rather than reading as a solid white strip");
     for (const [surface, material] of state) {
       const original = baseline.get(surface);
       assert.ok(material.transmission > 0.5 && material.transmission < 1, `${theme} ${surface} stays transmissive glass`);
@@ -220,4 +252,4 @@ assert.ok(!preparedShader.fragmentShader.includes("archiveTransmissionLod"), "le
 const spineShader = { fragmentShader: "#include <transmission_pars_fragment>", uniforms: {} };
 shadeMusicGlass(spineShader, "Ivory_Edges");
 assert.equal(spineShader.fragmentShader, "#include <transmission_pars_fragment>", "spine retains the wider diffuse transmission footprint");
-console.log(`Music case V0.4.0 passed: new ${triangles}-triangle/3-batch GLB, native dimensions, recessed insert, high-frost spine, thin-lid optics, and continuous theme/clarity round trips.`);
+console.log(`Music case V0.4.3 passed: ${triangles}-triangle/3-batch GLB, 8% wider compact body, preserved binding width, recessed insert, thin-lid optics, and continuous theme/clarity round trips.`);

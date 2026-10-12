@@ -119,8 +119,37 @@ test('content hash sees same-mtime edits and removals without rebuilding for REA
   assert.notEqual(after, await buildFingerprint(root))
 })
 
+test('cover algorithm edits rebuild production while study images do not', async (t) => {
+  const root = await fixture(t)
+  const directory = path.join(root, 'reference/cover-candidates')
+  await fs.mkdir(directory, { recursive: true })
+  const file = path.join(directory, 'generator.mjs')
+  await fs.writeFile(file, 'export const layout = 1')
+  const before = await buildFingerprint(root)
+  const stat = await fs.stat(file)
+  await fs.writeFile(file, 'export const layout = 2')
+  await fs.utimes(file, stat.atime, stat.mtime)
+  const after = await buildFingerprint(root)
+  assert.notEqual(before, after)
+  await fs.writeFile(path.join(directory, 'comparison.png'), 'study output only')
+  assert.equal(after, await buildFingerprint(root))
+})
+
 test('installed ESM-only and type-only dependencies are ready without require entrypoints', async () => {
   assert.equal(await dependenciesReady(PROJECT_DIR), true)
+})
+
+test('bundled agent guide changes invalidate the build; its user README does not', async (t) => {
+  const root = await fixture(t)
+  const directory = path.join(root, 'docs/album-introductions')
+  await fs.mkdir(directory, { recursive: true })
+  await fs.writeFile(path.join(directory, 'agent.md'), 'First protocol')
+  const before = await buildFingerprint(root)
+  await fs.writeFile(path.join(directory, 'agent.md'), 'Updated protocol')
+  const after = await buildFingerprint(root)
+  assert.notEqual(before, after)
+  await fs.writeFile(path.join(directory, 'README.md'), 'User guide only')
+  assert.equal(after, await buildFingerprint(root))
 })
 
 test('Finder command changes cwd safely from another directory', async (t) => {

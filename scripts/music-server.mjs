@@ -4,23 +4,27 @@ import { fileURLToPath } from 'node:url'
 import { promises as fs, createReadStream } from 'node:fs'
 import { MusicLibraryStore, safeRootList } from './music-library.mjs'
 import { AudioDecoder, NativeAudioOutput } from './music-audio.mjs'
+import { INTRODUCTION_EXCHANGE_LIMIT } from './album-introduction-exchange.mjs'
 
 const PROJECT_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.woff': 'font/woff', '.woff2': 'font/woff2', '.glb': 'model/gltf-binary', '.gltf': 'model/gltf+json', '.wav': 'audio/wav', '.mp3': 'audio/mpeg', '.ogg': 'audio/ogg', '.opus': 'audio/ogg', '.ico': 'image/x-icon', '.webmanifest': 'application/manifest+json' }
 const LOOPBACK = new Set(['127.0.0.1', 'localhost', '[::1]'])
+// The result retains its own 4 MiB validation limit; leave bounded room for
+// the API's { result, allowReplace } envelope and ordinary JSON whitespace.
+const INTRODUCTION_REQUEST_LIMIT = INTRODUCTION_EXCHANGE_LIMIT + 1024
 
 function json(response, status, data) {
   response.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' })
   response.end(JSON.stringify(data))
 }
 
-async function bodyJson(request) {
+async function bodyJson(request, limit = 128 * 1024) {
   if (!request.headers['content-type']?.toLowerCase().startsWith('application/json')) throw Object.assign(new Error('请使用 application/json 请求体'), { status: 415 })
   let size = 0
   const chunks = []
   for await (const chunk of request) {
     size += chunk.length
-    if (size > 128 * 1024) throw Object.assign(new Error('请求体过大'), { status: 413 })
+    if (size > limit) throw Object.assign(new Error('请求体过大'), { status: 413 })
     chunks.push(chunk)
   }
   const value = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}')
@@ -134,6 +138,7 @@ export async function createMusicServer({
       }
       if (route === '/api/library/scan' && request.method === 'POST') {
         const value = await bodyJson(request)
+        store.assertNoIntroductionImport()
         if (store.scanPromise) return json(response, 202, store.snapshot())
         const roots = value.roots === undefined ? undefined : safeRootList(value.roots)
         void store.scan({ roots }).catch(() => {})
@@ -154,13 +159,31 @@ export async function createMusicServer({
       }
       if (route === '/api/library/enrich' && request.method === 'POST') {
         const value = await bodyJson(request)
+        store.assertNoIntroductionImport()
         if (!store.musicBrainzContact) return json(response, 400, { error: '在线资料库尚未配置：请在资料库设置填写自己的联系邮箱或项目网址。音乐仍可本地播放。' })
         if (value.albumIds !== undefined && (!Array.isArray(value.albumIds) || value.albumIds.some((id) => typeof id !== 'string'))) return json(response, 400, { error: 'albumIds 必须是专辑 ID 数组' })
         void store.enrich({ albumIds: value.albumIds, force: true }).catch(() => {})
         return json(response, 202, store.snapshot())
       }
+      if (route === '/api/library/introductions/task' && get) {
+        return json(response, 200, store.introductionTask({ scope: url.searchParams.get('scope') ?? 'missing', albumId: url.searchParams.get('albumId') ?? undefined }))
+      }
+      if (route === '/api/library/introductions/reconcile' && request.method === 'POST') {
+        const value = await bodyJson(request, INTRODUCTION_REQUEST_LIMIT)
+        if (Object.keys(value).some((key) => key !== 'result')) return json(response, 400, { error: '重新核对请求仅接受 result' })
+        return json(response, 200, await store.reconcileIntroductions(value.result))
+      }
+      if (['/api/library/introductions/import-preview', '/api/library/introductions/import'].includes(route) && request.method === 'POST') {
+        const value = await bodyJson(request, INTRODUCTION_REQUEST_LIMIT)
+        if (Object.keys(value).some((key) => !['result', 'allowReplace'].includes(key))) return json(response, 400, { error: '导入请求仅接受 result 和 allowReplace' })
+        const options = { allowReplace: value.allowReplace ?? false }
+        if (value.allowReplace !== undefined && typeof value.allowReplace !== 'boolean') return json(response, 400, { error: 'allowReplace 必须为布尔值' })
+        const result = route.endsWith('/import-preview') ? store.previewIntroductions(value.result, options) : await store.importIntroductions(value.result, options)
+        return json(response, 200, result)
+      }
       if (route === '/api/library/introductions' && request.method === 'POST') {
         const value = await bodyJson(request)
+        store.assertNoIntroductionImport()
         if (value.albumIds !== undefined && (!Array.isArray(value.albumIds) || value.albumIds.length > 10000 || value.albumIds.some((id) => typeof id !== 'string'))) return json(response, 400, { error: 'albumIds 必须是专辑 ID 数组' })
         if (value.force !== undefined && typeof value.force !== 'boolean') return json(response, 400, { error: 'force 必须为布尔值' })
         void store.updateIntroductions({ albumIds: value.albumIds, force: value.force ?? false }).catch(() => {})
@@ -168,6 +191,7 @@ export async function createMusicServer({
       }
       if (route === '/api/library/credits' && request.method === 'POST') {
         const value = await bodyJson(request)
+        store.assertNoIntroductionImport()
         if (value.albumIds !== undefined && (!Array.isArray(value.albumIds) || value.albumIds.length > 10000 || value.albumIds.some((id) => typeof id !== 'string'))) return json(response, 400, { error: 'albumIds 必须是专辑 ID 数组' })
         if (value.force !== undefined && typeof value.force !== 'boolean') return json(response, 400, { error: 'force 必须为布尔值' })
         void store.updateCredits({ albumIds: value.albumIds, force: value.force ?? false }).catch(() => {})
@@ -198,7 +222,7 @@ export async function createMusicServer({
       const asset = path.resolve(distDir, `.${route === '/' ? '/index.html' : route}`)
       return await serveFile(request, response, { path: asset, allowedRoot: distDir }, { cache: route.startsWith('/assets/') ? 'public, max-age=31536000, immutable' : 'no-cache' })
     } catch (error) {
-      if (!response.headersSent) json(response, error.status ?? (['ENOENT', 'ENOTDIR'].includes(error.code) ? 404 : 400), { error: error.message })
+      if (!response.headersSent) json(response, error.status ?? (['ENOENT', 'ENOTDIR'].includes(error.code) ? 404 : 400), { error: error.message, ...(error.preview ?? {}) })
       else response.destroy()
     }
   })

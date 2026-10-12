@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { generatedCoverSource } from "./generated-album-cover.ts";
 import type { MusicSelectionLighting } from "./music-lighting";
 import type { ArchiveRecord } from "./data";
 import { MUSIC_COVER, createAlbumPrintMaterial } from "./music-model.ts";
@@ -36,9 +37,12 @@ export function containCover(
 
 export function paintCover(
   canvas: HTMLCanvasElement,
-  record: Pick<ArchiveRecord, "title"> | undefined,
+  record: (Pick<ArchiveRecord, "title"> & Partial<Pick<ArchiveRecord, "id" | "en" | "album">> & { artist?: string }) | undefined,
   image?: CoverImage,
 ) {
+  const metadata = { id: record?.id, title: record?.title ?? "未命名专辑", artist: record?.album?.artist ?? record?.artist ?? record?.en };
+  const generated = !image ? generatedCoverSource(metadata) : undefined;
+  if (generated) image = { source: generated, width: generated.width, height: generated.height };
   const context = canvas.getContext("2d")!;
   // Paint in one logical coordinate space, including fallback art and labels.
   // Ownership can move between atlas/selection/snapshot without rescaling art.
@@ -58,35 +62,6 @@ export function paintCover(
     );
     return;
   }
-  // A missing cover is explicit and never substituted with another album's art.
-  const size = height - margin * 2,
-    left = (width - size) / 2;
-  context.fillStyle = "#c9c9c4";
-  context.fillRect(left, margin, size, size);
-  context.strokeStyle = "#f8f7f1";
-  context.lineWidth = Math.max(1, height / 180);
-  context.beginPath();
-  context.arc(width / 2, height * 0.43, height * 0.2, 0, Math.PI * 2);
-  context.stroke();
-  context.beginPath();
-  context.arc(width / 2, height * 0.43, height * 0.04, 0, Math.PI * 2);
-  context.stroke();
-  context.fillStyle = "#3f4849";
-  context.textAlign = "center";
-  context.font = `500 ${Math.max(12, height * 0.045)}px sans-serif`;
-  context.fillText(
-    record?.title ?? "暂无专辑封面",
-    width / 2,
-    height * 0.8,
-    height * 0.83,
-  );
-  context.font = `${Math.max(9, height * 0.025)}px sans-serif`;
-  context.fillText(
-    "LOCAL COLLECTION / NO COVER",
-    width / 2,
-    height * 0.87,
-    height * 0.83,
-  );
 }
 
 /** One fixed-size atlas for the visible pool, regardless of total library size. */
@@ -121,12 +96,15 @@ export class CoverAtlas {
   private selectedKey?: string;
   private generation = 0;
   private disposed = false;
-  private readonly columns = 16;
+  private readonly columns: number;
   private readonly rows: number;
   private readonly tileWidth: number;
   private readonly tileHeight: number;
 
   constructor(count: number, maxTextureSize: number, anisotropy: number, lighting?: MusicSelectionLighting) {
+    // Keep the enlarged 612-slot shelf below an 8192px texture edge at the
+    // existing 256px cover resolution; preserve smaller pools' original grid.
+    this.columns = count > 512 ? 24 : 16;
     this.rows = Math.ceil(count / this.columns);
     this.tileWidth = Math.min(
       256,
@@ -323,7 +301,7 @@ export class CoverAtlas {
     // their print. Cache only the visual identity, not the object reference.
     let key = record ? this.recordKeys.get(record) : "";
     if (record && key === undefined) {
-      key = JSON.stringify([record.id, record.album?.coverUrl, record.title]);
+      key = JSON.stringify([record.id, record.album?.coverUrl, record.title, record.album?.artist]);
       this.recordKeys.set(record, key);
     }
     return key!;
@@ -384,19 +362,22 @@ export class CoverAtlas {
     if (this.selectedKey === key) return;
     const generation = this.generation;
     const cached = this.cachedImage(record?.album?.coverUrl);
-    if (cached) paintCover(this.selectedCanvas, record, cached);
+    const coverUrl = record?.album?.coverUrl;
+    if (!coverUrl || (this.decodedImages.has(coverUrl) && !cached)) paintCover(this.selectedCanvas, record);
+    else if (cached) paintCover(this.selectedCanvas, record, cached);
     else if (!this.copyCover(this.selectedCanvas, key)) paintCover(this.selectedCanvas, record);
     this.selectedKey = key;
     this.selectedTexture.needsUpdate = true;
     if (cached && cached.decodedSize >= Math.min(COVER_PAINT_SIZE, Math.max(cached.width, cached.height))) return;
     const image = await this.loadImage(record?.album?.coverUrl, true);
     if (
-      !image ||
       this.disposed ||
       generation !== this.generation ||
       this.selectedKey !== key
     )
       return;
+    // Failed loads also repaint from the full 800px generated source; they
+    // must not leave enlarged text copied from a temporary 256px shelf tile.
     paintCover(this.selectedCanvas, record, image);
     this.selectedTexture.needsUpdate = true;
   }
@@ -416,7 +397,9 @@ export class CoverAtlas {
     const record = this.selectedRecord;
     mesh.userData.coverDisposed = false;
     void this.loadImage(record?.album?.coverUrl, true).then((image) => {
-      if (!image || mesh.userData.coverDisposed || this.disposed) return;
+      if (mesh.userData.coverDisposed || this.disposed) return;
+      // A pending original may fail after the selection has moved on. Its
+      // returning snapshot still needs the full 800px generated source.
       paintCover(canvas, record, image);
       texture.needsUpdate = true;
     });

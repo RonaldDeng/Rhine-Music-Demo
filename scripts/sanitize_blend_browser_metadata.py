@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
-"""Clear only stored file-browser directories in a Blender 5.0.2 .blend.
+"""Clear stored review metadata in a Blender 5.0.2 .blend.
 
 Uses only Python's standard library. Zstandard-compressed input additionally
 requires the `zstd` executable (or --zstd PATH). Output is a normal uncompressed
 .blend, preserving every byte except FileSelectParams.dir's fixed-size arrays.
+Optional --view-matcaps also replaces obsolete JPEG viewport matcap references
+with Blender's built-in basic_1.exr and clears unused bytes in those arrays,
+plus JPEG remnants after the first NUL in the studio_light array.
 The deliberately narrow format checks reject other formats instead of guessing.
 
 Usage:
@@ -107,7 +110,7 @@ def read_dna(data):
     return names, types, lengths, structures
 
 
-def sanitize(data):
+def sanitize(data, reset_view_matcaps=False):
     blocks = read_blocks(data)
     dna_blocks = [b for b in blocks if b["code"] == b"DNA1"]
     require(len(dna_blocks) == 1, "Expected one DNA1 block")
@@ -134,6 +137,7 @@ def sanitize(data):
     dna_index, record_size, (field_offset, field_size) = layouts[0]
     output = bytearray(data)
     ranges = []
+    expected = {}
     for block in blocks:
         if block["code"] != b"DATA" or block["dna_index"] != dna_index:
             continue
@@ -144,14 +148,77 @@ def sanitize(data):
             end = start + field_size
             output[start:end] = b"/" + b"\0" * (field_size - 1)
             ranges.append((start, end))
+            expected[(start, end)] = bytes(output[start:end])
     require(ranges, "No stored FileSelectParams directory found")
+    directory_ranges = list(ranges)
+    matcap_ranges = []
+    studio_tail_ranges = []
+    if reset_view_matcaps:
+        def structure(type_name):
+            matches = [(index, type_index, fields)
+                       for index, (type_index, fields) in enumerate(structures)
+                       if types[type_index] == type_name]
+            require(len(matches) == 1, "Expected one " + type_name + " definition")
+            index, type_index, fields = matches[0]
+            offset = 0
+            layout = {}
+            for field_type, field_name in fields:
+                name = names[field_name]
+                count = math.prod(map(int, re.findall(r"\[(\d+)\]", name)))
+                size = (8 if "*" in name else lengths[field_type]) * count
+                layout[name] = (offset, size, types[field_type])
+                offset += size
+            require(offset == lengths[type_index], "Unexpected " + type_name + " layout/padding")
+            return index, offset, layout
+
+        view_index, view_size, view_fields = structure("View3D")
+        _, shading_size, shading_fields = structure("View3DShading")
+        require("shading" in view_fields, "View3D.shading is missing")
+        shading_offset, embedded_size, embedded_type = view_fields["shading"]
+        require(embedded_type == "View3DShading" and embedded_size == shading_size,
+                "Unexpected embedded viewport shading layout")
+        require("matcap[256]" in shading_fields, "Expected fixed matcap[256] field")
+        matcap_offset, matcap_size, matcap_type = shading_fields["matcap[256]"]
+        require(matcap_type == "char" and matcap_size == 256, "Unexpected matcap field type")
+        require("studio_light[256]" in shading_fields, "Expected fixed studio_light[256] field")
+        studio_offset, studio_size, studio_type = shading_fields["studio_light[256]"]
+        require(studio_type == "char" and studio_size == 256, "Unexpected studio light field type")
+        replacement = b"basic_1.exr" + b"\0" * (matcap_size - len(b"basic_1.exr"))
+        for block in blocks:
+            if block["code"] != b"DATA" or block["dna_index"] != view_index:
+                continue
+            require(block["size"] == block["count"] * view_size,
+                    "View3D block size does not match SDNA")
+            for index in range(block["count"]):
+                start = block["start"] + index * view_size + shading_offset + matcap_offset
+                end = start + matcap_size
+                # Includes stale bytes beyond the first NUL in a fixed C array.
+                if re.search(rb"\.jpe?g(?:\0|$)", data[start:end], re.IGNORECASE):
+                    output[start:end] = replacement
+                    ranges.append((start, end))
+                    matcap_ranges.append((start, end))
+                    expected[(start, end)] = replacement
+                studio_start = block["start"] + index * view_size + shading_offset + studio_offset
+                studio_end = studio_start + studio_size
+                nul = data[studio_start:studio_end].find(b"\0")
+                if nul < 0:
+                    continue
+                tail_start = studio_start + nul + 1
+                if not re.search(rb"\.jpe?g(?:\0|$)", data[tail_start:studio_end], re.IGNORECASE):
+                    continue
+                # Preserve the effective name and its first NUL byte exactly.
+                clean_tail = b"\0" * (studio_end - tail_start)
+                output[tail_start:studio_end] = clean_tail
+                ranges.append((tail_start, studio_end))
+                studio_tail_ranges.append((tail_start, studio_end))
+                expected[(tail_start, studio_end)] = clean_tail
     output = bytes(output)
     require(len(output) == len(data), "File length changed")
     require(read_blocks(output) == blocks, "Block boundaries or headers changed")
     last = 0
     for start, end in sorted(ranges):
         require(data[last:start] == output[last:start], "Bytes outside directory arrays changed")
-        require(output[start:end] == b"/" + b"\0" * (end - start - 1), "Invalid sanitized directory")
+        require(output[start:end] == expected[(start, end)], "Invalid sanitized review field")
         last = end
     require(data[last:] == output[last:], "Bytes outside directory arrays changed")
     changed_blocks = sum(data[b["start"]:b["end"]] != output[b["start"]:b["end"]] for b in blocks)
@@ -162,7 +229,12 @@ def sanitize(data):
         "block_count": len(blocks),
         "changed_block_count": changed_blocks,
         "directory_field": "FileSelectParams.dir",
-        "sanitized_ranges": [{"offset": start, "length": end - start} for start, end in ranges],
+        "sanitized_ranges": [{"offset": start, "length": end - start} for start, end in directory_ranges],
+        "matcap_field": "View3D.shading.matcap[256]",
+        "matcap_replacement": "basic_1.exr",
+        "sanitized_matcap_ranges": [{"offset": start, "length": end - start} for start, end in matcap_ranges],
+        "studio_tail_field": "View3D.shading.studio_light[256] after first NUL",
+        "sanitized_studio_tail_ranges": [{"offset": start, "length": end - start} for start, end in studio_tail_ranges],
         "changed_byte_count": sum(a != b for a, b in zip(data, output)),
         "all_other_bytes_identical": True,
         "source_uncompressed_sha256": hashlib.sha256(data).hexdigest(),
@@ -176,11 +248,13 @@ def main():
     parser.add_argument("input", type=Path)
     parser.add_argument("output", type=Path)
     parser.add_argument("--zstd", help="Path to the optional zstd executable")
+    parser.add_argument("--view-matcaps", action="store_true",
+                        help="Replace obsolete JPEG matcaps and clear JPEG remnants after the studio light name")
     args = parser.parse_args()
     require(args.input.resolve() != args.output.resolve(), "Use a separate output file")
     require(not args.output.exists(), "Output already exists; refusing to overwrite")
     data = load_blend(args.input, args.zstd)
-    output, report = sanitize(data)
+    output, report = sanitize(data, reset_view_matcaps=args.view_matcaps)
     with args.output.open("xb") as handle:
         handle.write(output)
     require(args.output.read_bytes() == output, "Output failed readback verification")

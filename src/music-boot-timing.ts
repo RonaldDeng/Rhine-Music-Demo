@@ -1,10 +1,11 @@
 // The music prologue owns its own edit; the measured live-scene clock stays
 // unchanged. Keeping these separate prevents replay from changing camera cues.
 export const MUSIC_BOOT_START_TIME = 0;
-// The 2D paper starts dissolving 80 ms before the live shelf starts moving.
+// The caption has faded out when the backdrop begins revealing the live shelf.
+// Start the dissolve 80 ms before the live shelf starts moving.
 // Prepare the renderer before boot.start(); it need not render behind opaque art.
-export const MUSIC_BOOT_SCENE_REVEAL_TIME = 6.32;
-export const MUSIC_BOOT_SCENE_START = 6.4;
+export const MUSIC_BOOT_SCENE_REVEAL_TIME = 1.72;
+export const MUSIC_BOOT_SCENE_START = 1.8;
 export const MUSIC_BOOT_SCENE_TIME = 21.92;
 export const MUSIC_BOOT_END_TIME = MUSIC_BOOT_SCENE_START + 5.2;
 
@@ -17,9 +18,11 @@ export class MusicBootFrameClock {
   private lastTime = 0;
   private appTime = MUSIC_BOOT_START_TIME;
 
-  reset(nowSeconds: number) {
+  reset(nowSeconds: number, startTime: typeof MUSIC_BOOT_START_TIME | typeof MUSIC_BOOT_SCENE_START = MUSIC_BOOT_START_TIME) {
     this.lastTime = nowSeconds;
-    this.appTime = MUSIC_BOOT_START_TIME;
+    // A scene-only replay enters the same authored clock after the caption fade;
+    // it does not remap, accelerate or consume any of the 5.2 second shelf move.
+    this.appTime = startTime;
   }
 
   update(nowSeconds: number) {

@@ -1,39 +1,170 @@
-.music-view-toggle, .overview-return {
-  position: absolute; z-index: 7; left: 40px;
-  display: flex; align-items: center; gap: 11px; padding: 9px 0;
-  border: 0; border-bottom: 1px solid var(--line); background: none;
-  font-size: 12px !important; cursor: pointer; letter-spacing: .06em;
+/* One inset for the top, left and right edges of both archive and detail UI. */
+.music-app {
+  --music-page-edge: 33px;
+  --music-brand-left: var(--music-page-edge);
+  --music-brand-right: var(--music-brand-left);
+  --music-callout-left: 68.633333vw;
+  --music-view-top: 95px;
+  --music-footer-bottom: max(13px, env(safe-area-inset-bottom));
+  --music-footer-size: 8px;
+  --music-navigation-offset: 35px;
+  --overview-controls-bottom: calc(var(--music-footer-bottom) + 56px);
 }
-.music-view-toggle { top: 150px; }
-.music-view-toggle svg, .overview-return svg { width: 16px; height: 16px; }
+@media (min-width: 1700px) {
+  .music-app { --music-page-edge: 48px; --music-view-top: 121px; --music-navigation-offset: 59px; }
+}
+@media (max-width: 1100px) {
+  .music-app { --music-page-edge: 25px; --music-view-top: 79px; --music-footer-size: 7px; --music-navigation-offset: 32px; }
+}
+@media (max-width: 700px) {
+  .music-app { --music-page-edge: 20px; --music-view-top: 75px; --music-footer-size: 6px; --music-navigation-offset: 40px; }
+}
+.music-app[data-layout="portrait"] { --music-page-edge: 20px; --music-view-top: 114px; }
+.music-app .music-header,
+.music-app[data-layout="portrait"] .music-header {
+  top: var(--music-page-edge);
+  left: var(--music-brand-left);
+  right: var(--music-brand-right);
+}
+.music-app .card-caption,
+.music-app .music-back,
+.music-app[data-layout="portrait"] .card-caption,
+.music-app[data-layout="portrait"] .music-back { left: var(--music-brand-left); }
+/* Align the reading edge, leaving its padding and stable scrollbar outside the
+   shared right rail. Native scrollbar width is measured before detail reveal. */
+.music-app .music-detail #album-detail-content {
+  --music-detail-padding: 9px;
+  right: calc(var(--music-brand-right) - var(--music-detail-padding) - var(--music-detail-scrollbar-width, 0px));
+  padding-right: var(--music-detail-padding);
+}
+.music-app[data-layout="portrait"] #album-detail-content {
+  --music-detail-padding: 5px;
+  left: var(--music-brand-left);
+}
+.music-app .music-bottomline,
+.music-app .music-keyhint {
+  left: var(--music-brand-left); right: var(--music-brand-right);
+  bottom: var(--music-footer-bottom); line-height: 1.5;
+  font-size: var(--music-footer-size);
+}
+.music-app .music-keyhint { text-align: center; }
+.music-app[data-overview="true"] .music-bottomline { z-index: 5; }
+.music-app .music-navigation {
+  left: var(--music-brand-left); right: var(--music-brand-right);
+  /* Move all three controls together, keeping at least 21.5px above the footer
+     text and following its safe-area inset on phones. */
+  bottom: calc(var(--music-footer-bottom) + var(--music-navigation-offset));
+}
+.music-app .genre-stepper { justify-content: center; }
+/* Keep the counter and ruler tracks, but center the singer controls beneath the
+   album callout. The navigation's height still provides the vertical alignment. */
+.music-app:not([data-layout="portrait"]) .genre-stepper {
+  position: absolute;
+  left: calc(var(--music-callout-left) - var(--music-brand-left)); right: 0;
+  top: 0; bottom: 0;
+}
+.music-app .library-status, .music-app[data-layout="portrait"] .library-status {
+  left: var(--music-brand-left); top: calc(var(--music-view-top) + 40px);
+}
+.music-view-toggle, .overview-return {
+  display: flex; align-items: center; gap: 8px; padding: 7px 0; min-height: 32px;
+  border: 0; border-bottom: 1px solid var(--line); background: none;
+  font-size: 10px !important; cursor: pointer; letter-spacing: .06em;
+}
+.music-view-toggle {
+  position: absolute; z-index: 7; top: var(--music-view-top); left: var(--music-brand-left);
+  font-size: 11px !important; min-height: 34px; padding: 8px 0; gap: 9px;
+}
+.music-view-toggle svg, .overview-return svg { width: 14px; height: 14px; }
+.music-view-toggle svg { width: 16px; height: 16px; }
 .music-view-toggle kbd, .overview-return kbd { color: var(--muted); font-size: 10px; }
 .music-overview { position: absolute; inset: 0; z-index: 4; pointer-events: none; }
-.overview-heading { position: absolute; top: 135px; left: 40px; }
-.overview-heading small { font-size: 9px; letter-spacing: .23em; color: var(--muted); }
-.overview-heading h2 { font-size: 19px; font-weight: 400; margin: 9px 0; letter-spacing: .12em; }
-.overview-heading p { font-size: 11px; color: var(--muted); }
+/* Match the reference's three corners using the same inset as the header and
+   footer. All anchors follow the stage. */
+.overview-navigation {
+  position: absolute; inset: 0; z-index: 7; pointer-events: none;
+}
+.overview-heading {
+  position: absolute; left: var(--music-brand-left);
+  top: calc(var(--music-view-top) + 24px);
+  max-width: calc(100% - 2 * var(--music-brand-left));
+}
+.overview-heading small { display: block; font-size: 9px; line-height: 1.5; letter-spacing: .23em; color: var(--muted); }
+.overview-heading h2 { font-size: 15px; line-height: 1.4; font-weight: 400; margin: 7px 0 0; letter-spacing: .1em; }
+.overview-heading p { margin: 8px 0 0; font-size: 10px; line-height: 1.5; color: var(--muted); }
 .overview-columns { position: absolute; inset: 0; }
-.overview-anchor { --overview-label-width: 160px; position: absolute; width: var(--overview-label-width); transform: translate(-50%, -100%); }
+/* Artist-grid overview frosts the entire shelf. The catalog itself has
+   no enclosing plate: only individual tiles float above the full-screen glass. */
+.overview-artist-frost {
+  position: absolute; inset: 0; z-index: 1; pointer-events: none;
+  background: color-mix(in srgb, var(--surface) 5%, transparent);
+  backdrop-filter: blur(4px) saturate(0.95);
+  -webkit-backdrop-filter: blur(4px) saturate(0.95);
+}
+.overview-artist-frost[hidden] { display: none; }
+.overview-artist-panel {
+  position: absolute; z-index: 2;
+  left: var(--music-brand-left); right: var(--music-brand-right);
+  top: calc(var(--music-view-top) + 104px);
+  bottom: calc(var(--overview-controls-bottom) + 52px);
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-content: start; align-items: stretch; gap: 8px;
+  padding: 0; overflow: auto; scrollbar-gutter: stable;
+  overscroll-behavior: contain; touch-action: pan-y; pointer-events: auto;
+  background: none; border: 0; box-shadow: none;
+  scrollbar-width: thin; scrollbar-color: var(--line) transparent;
+}
+.overview-artist-panel[hidden] { display: none; }
+.overview-artist {
+  min-width: 0; min-height: 68px; padding: 12px;
+  display: flex; flex-direction: column; justify-content: center; gap: 6px;
+  color: var(--ink); text-align: left; cursor: pointer;
+  background: color-mix(in srgb, var(--surface) 64%, transparent);
+  border: 1px solid color-mix(in srgb, var(--line) 65%, transparent);
+  transition: border-color calc(180ms * var(--music-motion-scale, 1)),
+    background-color calc(180ms * var(--music-motion-scale, 1));
+}
+.overview-artist strong { font-size: 12px; line-height: 1.45; font-weight: 500; overflow-wrap: anywhere; }
+.overview-artist small { font-size: 9px; line-height: 1.4; color: var(--muted); }
+.overview-artist[aria-pressed="true"] { border-color: var(--accent); box-shadow: inset 0 2px var(--accent); }
+.overview-artist:hover { border-color: var(--accent); }
+.overview-artist:focus-visible { outline: 2px solid var(--accent); outline-offset: -3px; }
+.music-overview[data-layout="grid"] .overview-controls,
+.music-overview[data-layout="grid"] .overview-columns { display: none; }
+@media (min-width: 600px) { .overview-artist-panel { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (min-width: 900px) { .overview-artist-panel { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+.overview-anchor { --overview-label-width: 144px; --overview-label-height: 46px; --overview-entry-width: 32px; position: absolute; width: var(--overview-label-width); transform: translate(-50%, -100%); }
+/* The global reduced-motion rule sets a tiny transition duration on every
+   element. Without an explicit property reset it also transitions left/top,
+   making old labels lag a frame behind an immediate camera/navigation step. */
+.overview-anchor,
+.music-app.reduce-motion .overview-anchor * { transition: none !important; }
 .overview-column {
-  display: flex; width: max-content; position: relative;
+  display: flex; width: max-content; height: var(--overview-label-height); position: relative;
   background: color-mix(in srgb, var(--surface) 87%, transparent);
   border-top: 1px solid var(--line); text-align: left;
   pointer-events: auto; backdrop-filter: blur(12px);
 }
-.overview-column::after { content: ""; position: absolute; left: calc(var(--overview-label-width) / 2); top: 100%; height: 22px; border-left: 1px solid var(--line); }
-.overview-column-label { width: var(--overview-label-width); flex: 0 0 var(--overview-label-width); padding: 10px 12px 9px; border: 0; text-align: left; background: none; cursor: pointer; }
-.overview-column strong { display: block; font-size: 12px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.overview-column small { display: block; margin-top: 5px; font-size: 9px; letter-spacing: .06em; color: var(--muted); }
+.overview-column::after { content: ""; position: absolute; left: calc(var(--overview-label-width) / 2); top: 100%; height: 18px; border-left: 1px solid var(--line); }
+.overview-column-label { width: var(--overview-label-width); flex: 0 0 var(--overview-label-width); padding: 6px 10px; border: 0; text-align: left; background: none; cursor: pointer; }
+.overview-column strong { display: block; font-size: 12px; line-height: 1.3; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.overview-column small { display: block; margin-top: 4px; font-size: 9px; line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; letter-spacing: .06em; color: var(--muted); }
 .overview-column[aria-current="true"] { box-shadow: inset 0 1px var(--accent); border-top-color: var(--accent); }
 .overview-enter-slot { width: 0; overflow: hidden; opacity: 0; visibility: hidden; transition: width calc(420ms * var(--music-motion-scale, 1)) cubic-bezier(.4,0,.2,1), opacity calc(320ms * var(--music-motion-scale, 1)) ease, visibility 0s calc(420ms * var(--music-motion-scale, 1)); }
-.overview-enter { width: 76px; height: 100%; border: 0; border-left: 1px solid var(--line); background: none; font-size: 11px; white-space: nowrap; cursor: pointer; color: var(--accent); transform: translateX(-6px); transition: transform calc(420ms * var(--music-motion-scale, 1)) cubic-bezier(.4,0,.2,1); }
-.overview-column[data-expanded="true"] .overview-enter-slot { width: 76px; opacity: 1; visibility: visible; transition-delay: 0s; }
+.overview-enter { width: var(--overview-entry-width); height: 100%; border: 0; border-left: 1px solid var(--line); background: none; font-size: 13px !important; white-space: nowrap; cursor: pointer; color: var(--accent); transform: translateX(-6px); transition: transform calc(420ms * var(--music-motion-scale, 1)) cubic-bezier(.4,0,.2,1); }
+.overview-column[data-expanded="true"] .overview-enter-slot { width: var(--overview-entry-width); opacity: 1; visibility: visible; transition-delay: 0s; }
 .overview-column[data-expanded="true"] .overview-enter { transform: translateX(0); }
 .overview-column-label:focus-visible, .overview-enter:focus-visible { outline: 1px solid var(--accent); outline-offset: -3px; }
-.overview-return { bottom: 77px; pointer-events: auto; }
-.overview-controls { position: absolute; bottom: 76px; right: 40px; display: flex; align-items: center; gap: 22px; pointer-events: auto; }
-.overview-controls button { border: 1px solid var(--line); background: transparent; width: 36px; height: 32px; cursor: pointer; }
-.overview-controls span { font-size: 11px; color: var(--muted); }
+.overview-return {
+  position: absolute; left: var(--music-brand-left); bottom: var(--overview-controls-bottom);
+  pointer-events: auto;
+}
+.overview-controls {
+  position: absolute; right: var(--music-brand-right); bottom: var(--overview-controls-bottom);
+  display: flex; align-items: center; min-height: 32px; gap: 12px; pointer-events: auto;
+}
+.overview-controls button { border: 1px solid var(--line); background: transparent; width: 32px; height: 28px; font-size: 12px; cursor: pointer; }
+.overview-controls span { font-size: 10px; color: var(--muted); }
 /* Keep the complete navigation row's dimensions. The persistent transport keeps
    the same x/y coordinates, including portrait's explicit five grid tracks. */
 .music-topnav > :not(.minimal-transport), .music-view-toggle,
@@ -58,14 +189,25 @@
 .music-app.reduce-motion .music-dev-panels,
 .music-app.reduce-motion .library-status,
 .music-app.reduce-motion #runtime-info { transition: none; }
-@media (max-width: 600px) {
-  .music-view-toggle { left: 22px; top: 164px; }
-  .overview-return { left: 22px; bottom: 50px; }
-  .overview-heading { left: 22px; top: 115px; }
-  .overview-heading h2 { font-size: 17px; }
-  .overview-anchor { --overview-label-width: 116px; }
-  .overview-column-label { padding: 8px; }
+@media (max-width: 599px) {
+  .overview-anchor { --overview-label-width: 104px; --overview-label-height: 42px; }
+  .overview-column-label { padding: 5px 8px; }
   .overview-column strong { font-size: 11px; }
-  .overview-controls { right: 22px; bottom: 50px; gap: 12px; }
   .overview-controls span { display: none; }
+}
+/* Short windows retain the same three corners with a smaller footer gap. */
+@media (max-height: 380px) {
+  /* Keep the navigation available when vertical space is limited. */
+  .overview-heading { display: none; }
+}
+@media (max-height: 650px) {
+  .music-app { --overview-controls-bottom: calc(var(--music-footer-bottom) + 40px); }
+  .overview-heading h2 { margin-top: 5px; font-size: 13px; }
+  .overview-controls span, .overview-heading p { display: none; }
+  .overview-artist-panel { top: calc(var(--music-view-top) + 84px); }
+}
+@media (max-height: 380px) {
+  /* With the grid enabled on wide, shallow windows, place it just below the
+     brand instead of reserving the hidden overview heading's space. */
+  .overview-artist-panel { top: calc(var(--music-page-edge) + 65px); }
 }

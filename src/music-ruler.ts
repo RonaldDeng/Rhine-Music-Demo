@@ -35,7 +35,9 @@ function approach(state: Spring, target: number, seconds: number, instant: boole
     state.velocity = 0;
     return false;
   }
-  const frequency = 18;
+  // Same 10 / 460 ms critically damped response as the title/number reels.
+  // Preserve velocity on retargeting so repeated jumps and reversals join up.
+  const frequency = 10 / 0.46;
   const delta = state.value - target;
   const decay = Math.exp(-frequency * seconds);
   const advance = (state.velocity + frequency * delta) * seconds;

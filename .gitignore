@@ -21,6 +21,13 @@ __pycache__/
 .DS_Store
 music-data*/
 /library-index.json
+library-index.before-introductions-*.json
+library-index.before-introductions-*.json.*.tmp
+library-index.json.*.tmp
+albums-task*.json
+introductions-result*.json
+/agent.md
+/agent (*).md
 /genre-rules.json
 /artwork/
 *.log
