@@ -5,6 +5,33 @@
   line-height: 1.6;
 }
 
+.music-panel .lyrics-size-control {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex: 0 1 230px;
+  min-width: 0;
+}
+.music-panel .lyrics-size-control input[type="range"] { width: min(120px, 20vw); min-width: 55px; }
+.music-panel .lyrics-size-control input[type="number"] {
+  width: 58px;
+  padding: 5px;
+  border: 1px solid var(--line);
+  border-radius: 0;
+  background: var(--surface);
+  color: var(--ink);
+}
+.music-app[data-theme="night"] .music-panel #lyrics-font-size-number { color-scheme: dark; }
+.music-panel .lyrics-size-control small { flex: 0 0 auto; white-space: nowrap; }
+.music-panel #lyrics-font-preview {
+  color: var(--ink);
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+  margin: 18px 0;
+}
+.music-panel #lyrics-custom-font { width: 100%; }
+
 .music-panel :is(button, input, select, textarea) {
   font-size: 13px;
   line-height: 1.6;

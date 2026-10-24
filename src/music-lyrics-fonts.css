@@ -1,0 +1,9 @@
+/* Noto Sans SC 2.004, SIL Open Font License 1.1. Local full regional variable
+   font; no CDN and no global UI selector. Attribution: public/fonts/NotoSansSC-NOTICE.txt. */
+@font-face {
+  font-family: "Rhine Noto Sans SC";
+  src: url("/fonts/NotoSansSC-Variable.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+}

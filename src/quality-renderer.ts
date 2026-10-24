@@ -59,15 +59,6 @@ export function resizeQuality(
   composer.setPixelRatio(dimensions.ratio);
   composer.setSize(width, height);
   renderer.transmissionResolutionScale = quality.transmission;
-  host.dataset.renderQuality = JSON.stringify({
-    ...dimensions,
-    antialias: quality.antialias,
-    transmission: quality.transmission,
-    anisotropy: Math.min(
-      quality.anisotropy,
-      renderer.capabilities.getMaxAnisotropy(),
-    ),
-  });
   return dimensions;
 }
 

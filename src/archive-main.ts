@@ -3,7 +3,7 @@ import { DocumentDecryption } from "./document-decryption";
 import "./document-decryption.css";
 import "./decryption.css";
 import { escapeHtml } from "./html";
-import { normalizeQuality, qualityPresets, type QualityPreset, type RenderQuality } from "./render-quality";
+import { normalizeQuality, qualityPresets, renderDimensions, type QualityPreset, type RenderQuality } from "./render-quality";
 import { qualityMarkup, syncQualityUI } from "./quality-settings";
 import "@kitlangton/rolling-number/styles.css";
 import "./style.css";
@@ -89,26 +89,6 @@ let modal: "search" | "saved" | "settings" | null = null,
   searchQuery = "",
   filter = "全部档案";
 let activeTab = "overview";
-const reviewParams = new URLSearchParams(location.search);
-let frozenTime =
-  reviewParams.get("freeze") === "1"
-    ? Number(reviewParams.get("time") ?? 0)
-    : null;
-if (reviewParams.get("review") === "1") {
-  $("#stage").dataset.review = "true";
-  window.addEventListener("message", (event) => {
-    if (
-      event.origin !== location.origin ||
-      event.source !== window.parent ||
-      event.data?.type !== "rhine-review-frame"
-    )
-      return;
-    const t = Number(event.data.time);
-    if (!Number.isFinite(t) || t < 0 || t >= 35) return;
-    frozenTime = t;
-    if (ready && mode !== "boot") setMode("boot");
-  });
-}
 let toastTimer: ReturnType<typeof setTimeout>;
 let previousFocus: HTMLElement | null = null;
 const detailTransition = new SurfaceTransition($("#detail-ui"), undefined, 180, 180);
@@ -187,7 +167,6 @@ const selectedCode = createRollingNumber($("#selected-code"), codeOptions);
 const hoverCode = createRollingNumber($("#hover-code"), codeOptions);
 const audio = new TerminalAudio();
 audio.configure(prefs);
-let audioPreview = false, audioPreviewRequest = 0;
 let scene: ArchiveScene;
 let viewer: ModelViewer | undefined;
 const accessLog: { id: string; time: string }[] = [];
@@ -284,11 +263,6 @@ function setMode(next: Mode) {
   if (next === "detail" && mode !== "detail") recordAccess();
   mode = next;
   audio.setScene(next);
-  if (next !== "boot" && audioPreview) {
-    audioPreview = false;
-    audioPreviewRequest++;
-    audio.configure(prefs);
-  }
   $("#stage").dataset.mode = next;
   if (previousMode !== next) fit();
   $("#boot").inert = next !== "boot";
@@ -389,20 +363,19 @@ function updateSelection(navigation?: ArchiveNavigation) {
   });
   $("#saved-count").textContent = String(saved.size).padStart(2, "0");
 }
-function replayBoot(forcePreview = false) {
+function replayBoot() {
   if (!ready) return;
-  closeModal(() => replayBootAfterModal(forcePreview));
+  closeModal(() => replayBootAfterModal());
 }
-function replayBootAfterModal(forcePreview: boolean) {
+function replayBootAfterModal() {
   bootStart = performance.now() / 1000 - 1.76;
-  frozenTime = null;
   lastStep = "";
-  setMode(prefs.reduced && !forcePreview ? "archive" : "boot");
+  setMode(prefs.reduced ? "archive" : "boot");
   audio.restartBoot();
   scene.select(0);
   selected = 0;
   updateSelection();
-  if (!forcePreview) audio.play("ui-tick");
+  audio.play("ui-tick");
 }
 function openFile() {
   if (!ready) return;
@@ -585,8 +558,13 @@ function updateQualitySummary() {
   const summary = document.querySelector("#quality-summary");
   if (!summary || !scene) return;
   const canvas = scene.renderer.domElement;
-  const metrics = JSON.parse(canvas.parentElement?.dataset.renderQuality ?? "{}");
-  summary.textContent = `实际渲染 ${canvas.width} × ${canvas.height} · ${prefs.rendering.antialias === "smaa" ? "SMAA" : "原始抗锯齿"} · 纹理 ${metrics.anisotropy ?? 1}×${metrics.limited ? " · 已达到缓冲上限" : ""}`;
+  const host = canvas.parentElement;
+  if (!host) return;
+  const width = Math.max(1, host.clientWidth), height = Math.max(1, host.clientHeight);
+  const dimensions = renderDimensions(prefs.rendering, width, height,
+    host.getBoundingClientRect().width / width, devicePixelRatio, scene.renderer.capabilities.maxTextureSize);
+  const anisotropy = Math.min(prefs.rendering.anisotropy, scene.renderer.capabilities.getMaxAnisotropy());
+  summary.textContent = `实际渲染 ${canvas.width} × ${canvas.height} · ${prefs.rendering.antialias === "smaa" ? "SMAA" : "原始抗锯齿"} · 纹理 ${anisotropy}×${dimensions.limited ? " · 已达到缓冲上限" : ""}`;
 }
 function settingsMarkup() {
   return `<h2>SYSTEM SETTINGS<small>终端偏好设置</small></h2><p class="settings-intro">JOYCE MOORE <span>·</span> SESSION AUTHORIZED</p><div class="settings-list">${audioSettingsMarkup(prefs)}<label><div><strong>REDUCED MOTION</strong><span>减少镜头移动和过渡动效</span></div><input type="checkbox" data-pref="reduced" ${prefs.reduced ? "checked" : ""}/><i class="toggle"></i></label></div>${qualityMarkup(prefs.rendering)}${pwaSettingsMarkup()}<div class="settings-shortcuts"><span>KEYBOARD CONTROLS</span><p><kbd>←</kbd><kbd>→</kbd> 切列 <kbd>↑</kbd><kbd>↓</kbd> 选档 <kbd>ENTER</kbd> 读取 <kbd>/</kbd> 检索 <kbd>ESC</kbd> 返回</p></div><div class="settings-bottom">${document.fullscreenEnabled ? '<button data-action="fullscreen">FULLSCREEN <span>↗</span></button>' : ''}<button data-action="restart">REINITIALIZE SYSTEM <span>↻</span></button></div><div class="modal-bottom"><span>ANALYSIS OS / 1.0 · 使用 MiSans 字体（小米） <a href="${assetUrl("fonts/MiSans-license.pdf")}" target="_blank" rel="noopener">字体许可</a></span><span>POWERED BY RHINE LAB</span></div>`;
@@ -793,7 +771,7 @@ const ease = (t: number) => {
   return t * t * (3 - 2 * t);
 };
 function bootFrame(t: number) {
-  audio.updateBoot(t, frozenTime !== null);
+  audio.updateBoot(t, false);
   const motion = bootSequence.update(t);
   let step: string = motion.step;
   let caption =
@@ -847,16 +825,13 @@ function bootFrame(t: number) {
 const inspectionOverlay = new InspectionOverlay();
 const documentDecryption = new DocumentDecryption();
 
-let lastTime = 0,
-  frameCount = 0,
-  frameStart = performance.now(),
-  fps = 0;
+let lastTime = 0;
 function frame(ms: number) {
   if (document.hidden) { requestAnimationFrame(frame); return; }
   const time = ms / 1000;
   const cinema =
     mode === "boot" && ready
-      ? bootFrame(frozenTime ?? time - bootStart)
+      ? bootFrame(time - bootStart)
       : undefined;
   // The calibrated 2D opening fully covers the scene until array entry.
   if (!viewer?.isOpen && (!cinema || cinema.time >= 21.9)) scene?.update(time, cinema);
@@ -878,14 +853,6 @@ function frame(ms: number) {
   if (Math.floor(time) !== lastTime) {
     lastTime = Math.floor(time);
     $("#clock").textContent = new Date().toLocaleTimeString("en-GB");
-  }
-  frameCount++;
-  if (ms - frameStart > 1000) {
-    fps = (frameCount * 1000) / (ms - frameStart);
-    frameStart = ms;
-    frameCount = 0;
-    $("#three-scene").dataset.fps = String(Math.round(fps));
-    $("#three-scene").dataset.renderStats = JSON.stringify(scene?.getStats());
   }
   requestAnimationFrame(frame);
 }
@@ -936,10 +903,10 @@ async function start() {
     const params = new URLSearchParams(location.search);
     if (params.get("scene") === "archive") setMode("archive");
     if (params.get("scene") === "detail") setMode("detail");
-    bootStart -= params.has("time") ? Number(params.get("time")) : 1.76;
+    bootStart -= 1.76;
     // Let the loading veil finish before the first reference letter appears.
-    if (!params.has("time")) bootStart += 0.6;
-    if (prefs.reduced && !params.has("time")) setMode("archive");
+    bootStart += 0.6;
+    if (prefs.reduced) setMode("archive");
     requestAnimationFrame(frame);
     void initPwa(notify);
   } catch (error) {
@@ -950,43 +917,4 @@ async function start() {
 }
 updateSelection();
 void start();
-// Deterministic review controls: the running application, never a video surrogate.
-Object.assign(window, {
-  rhine: {
-    // The review button supplies a real user activation. Preferences stay local to this preview.
-    playBootPreview: async (music = false) => {
-      if (!ready || !navigator.userActivation.isActive) return false;
-      const request = ++audioPreviewRequest;
-      audioPreview = true;
-      audio.configure({ ...prefs, sound: true, music });
-      const unlocked = await audio.unlock();
-      if (request !== audioPreviewRequest) return false;
-      if (!unlocked) {
-        audioPreview = false;
-        audio.configure(prefs);
-        return false;
-      }
-      replayBoot(true);
-      return true;
-    },
-    seek: (t: number) => {
-      setMode("boot");
-      bootStart = performance.now() / 1000 - t;
-      lastStep = "";
-    },
-    archive: () => setMode("archive"),
-    detail: () => openFile(),
-    select: (i: number) => select(i),
-    stats: () => ({
-      ...scene?.getStats(),
-      fps: Math.round(fps),
-      mode,
-      ready,
-      bootTime: mode === "boot" ? (frozenTime ?? performance.now() / 1000 - bootStart) + 5 : null,
-      selected: records[selected].id,
-      saved: [...saved],
-      audio: audio.stats(),
-    }),
-  },
-});
 if (import.meta.hot) import.meta.hot.dispose(() => audio.dispose());

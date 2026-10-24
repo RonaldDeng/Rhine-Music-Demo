@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import ts from 'typescript';
 import { normalizeSongTransition } from '../src/music-song-transition.ts';
+import { DEFAULT_LYRICS_PREFERENCES, LYRICS_FONT_OPTIONS, LYRICS_FONT_SIZE_MIN, LYRICS_FONT_SIZE_MAX } from '../src/music-lyrics-preferences.ts';
 
 const modes = ['fade-out', 'fade-in-out', 'gapless'];
 for (const mode of modes) for (const legacy of [undefined, true, false, null, 'false', 0])
@@ -106,6 +107,7 @@ function fixture(saved, { rawStorage, denyStorage = false, settingsOpen = true }
     stop() { assert.fail('Changing a preference must not stop playback'); }
   }
   const code = `
+    const preferencesKey = 'rhine-music-preferences', isReviewMode = false;
     ${variable('read')}
     ${variable('save')}
     ${variable('preferences')}
@@ -140,6 +142,9 @@ function fixture(saved, { rawStorage, denyStorage = false, settingsOpen = true }
       const sortLabels = { genre: { name: '按流派' }, artist: { name: '按歌手' }, album: { name: '按专辑名' } };
       const audioOutputMarkup = () => '', qualityMarkup = () => '', renderQuality = {};
       const lightingLab = false, appVersion = '0.5.0';
+      const { DEFAULT_LYRICS_PREFERENCES, LYRICS_FONT_OPTIONS, LYRICS_FONT_SIZE_MIN, LYRICS_FONT_SIZE_MAX } = lyricsDefaults;
+      const getLyricsPreferences = () => ({ ...DEFAULT_LYRICS_PREFERENCES }), esc = value => value;
+      ${functionSource('lyricsSettingsMarkup')}
       ${settings.body.statements[0].getText(tree)}
       return panel.innerHTML;
     }
@@ -147,8 +152,9 @@ function fixture(saved, { rawStorage, denyStorage = false, settingsOpen = true }
     return { preferences, player, change, changeVisibility, click, markup, sync: syncSongTransitionControl,
       toggle: toggleSongTransition, selected: () => selected };
   `;
-  const ports = new Function('localStorage', 'normalizeSongTransition', 'MusicPlayer', '$', 'document', 'stage', 'notify', transpile(code))(
+  const ports = new Function('localStorage', 'normalizeSongTransition', 'MusicPlayer', '$', 'document', 'stage', 'notify', 'lyricsDefaults', transpile(code))(
     localStorage, normalizeSongTransition, MusicPlayer, $, document, stage, message => notices.push(message),
+    { DEFAULT_LYRICS_PREFERENCES, LYRICS_FONT_OPTIONS, LYRICS_FONT_SIZE_MIN, LYRICS_FONT_SIZE_MAX },
   );
   return { ...ports, storage, calls, playback, button, selectControl, visibilityControl, stage, notices };
 }

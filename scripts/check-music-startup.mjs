@@ -4,14 +4,12 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import ts from 'typescript';
-import { MusicFrameTiming } from '../src/music-frame-timing.ts';
-import './check-music-frame-timing.mjs';
 
 const { version: appVersion } = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'));
 const source = await readFile(new URL('../src/music-app.ts', import.meta.url), 'utf8');
 const tree = ts.createSourceFile('music-app.ts', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
 const functionNames = ['frame', 'resetFrameTiming', 'suspendPage', 'resumePage', 'disposePage'];
-const declarationNames = ['lastFrame', 'frameCount', 'frameDisposed', 'frameTiming', 'textMotionTime'];
+const declarationNames = ['frameHandle', 'frameDisposed', 'textMotionTime'];
 const functions = functionNames.map(name => {
   const node = tree.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === name);
   assert.ok(node, `Production ${name} must exist`);
@@ -46,7 +44,7 @@ function eventTarget() {
 function fixture({ renderScene = true, firstMs = 0, reduced = false, speed = 1, ready = true } = {}) {
   const pending = new Map(), elements = new Map();
   const calls = { scene: 0, boot: 0, viewer: 0, presentation: 0, library: 0, clearTimeout: [],
-    decryption: [], dispose: { scene: 0, boot: 0, overview: 0, player: 0, effects: 0, trackFocus: 0 } };
+    decryption: [], dispose: { scene: 0, boot: 0, overview: 0, player: 0, effects: 0, trackFocus: 0, cssMotion: 0, lyrics: 0, lyricsSettings: 0, detailView: 0 } };
   const document = { ...eventTarget(), hidden: false }, window = eventTarget();
   const scene = { update: () => calls.scene++, musicPresentationPhase: 'archive',
     getStats: () => ({ drawCalls: 12, triangles: 1000 }), dispose: () => calls.dispose.scene++ };
@@ -62,12 +60,16 @@ function fixture({ renderScene = true, firstMs = 0, reduced = false, speed = 1, 
   const requestAnimationFrame = callback => { const id = ++handle; pending.set(id, callback); return id; };
   const cancelAnimationFrame = id => pending.delete(id);
   const compiled = new Function('document', 'window', 'scene', 'boot', 'viewer', 'presentation', '$',
-    'requestAnimationFrame', 'cancelAnimationFrame', 'MusicFrameTiming', 'config', 'calls', 'appVersion', `
+    'requestAnimationFrame', 'cancelAnimationFrame', 'config', 'calls', 'appVersion', `
     const performance = { now: () => config.cpuNow() };
     const preferences = { reduced: config.reduced, theme: 'day' }, themeNames = { day: '晨雾' };
     const stage = { dataset: {} }, getMusicMotionSpeed = () => config.speed;
     const updateOverview = () => {}, overviewRevealPending = false, overview = false;
     const overviewUI = { dispose: () => calls.dispose.overview++ };
+    const stopCssMotion = () => calls.dispose.cssMotion++;
+    const lyricsPane = { dispose: () => calls.dispose.lyrics++ };
+    const stopLyricsSettings = () => calls.dispose.lyricsSettings++;
+    const detailViewTransition = { cancel: () => calls.dispose.detailView++ };
     const showBrowseSurface = () => {}, documentDecryption = { update: time => calls.decryption.push(time) };
     const pendingDetailFocus = false, pendingTrackReveal = undefined, panel = undefined;
     const pollTimer = 17, toastTimer = 18, clearTimeout = id => calls.clearTimeout.push(id);
@@ -78,10 +80,10 @@ function fixture({ renderScene = true, firstMs = 0, reduced = false, speed = 1, 
     let ready = config.ready;
     ${compiledCode}
     return { frame, suspendPage, resumePage, disposePage, setReady: value => { ready = value; },
-      state: () => ({ lastFrame, frameCount, frameHandle, frameDisposed, frameSuspended,
-        textMotionTime, textMotionLastFrame, timing: frameTiming.snapshot() }) };
+      state: () => ({ frameHandle, frameDisposed, frameSuspended,
+        textMotionTime, textMotionLastFrame }) };
   `)(document, window, scene, boot, viewer, presentation, $, requestAnimationFrame, cancelAnimationFrame,
-    MusicFrameTiming, { reduced, speed, ready, cpuNow: () => { cpuClock += 2; return cpuClock; } }, calls, appVersion);
+    { reduced, speed, ready, cpuNow: () => { cpuClock += 2; return cpuClock; } }, calls, appVersion);
   const result = { ...compiled, calls, pending, elements, document, window, boot, viewer, presentation,
     next(ms) {
       assert.equal(pending.size, 1, 'Exactly one main frame continuation, without accumulation');
@@ -95,17 +97,10 @@ function fixture({ renderScene = true, firstMs = 0, reduced = false, speed = 1, 
 }
 
 const steady = fixture({ firstMs: 30000 });
-assert.equal(steady.elements.get('#runtime-info')?.textContent, undefined, 'No misleading 0 FPS is emitted for the 30 s load');
-assert.equal(steady.state().timing.samples, 0);
+assert.equal(steady.elements.get('#runtime-info'), undefined, 'The animation loop does not publish frame diagnostics');
 for (let index = 1; index <= 600; index++) steady.next(30000 + index * 1000 / 60);
 assert.equal(steady.calls.scene, 601);
 assert.equal(steady.pending.size, 1);
-assert.equal(steady.state().timing.samples, 240);
-assert.equal(steady.state().timing.fps, 60);
-assert.equal(steady.state().timing.cpuP95, 2);
-assert.match(steady.elements.get('#runtime-info').textContent, /^6[01] FPS \/ 晨雾 \/ V/);
-assert.ok(steady.elements.get('#runtime-info').textContent.endsWith(` / V${appVersion}`));
-assert.equal(JSON.parse(steady.elements.get('#three-scene').dataset.frameTiming).fps, 60);
 
 const opaque = fixture({ renderScene: false });
 for (let index = 1; index <= 600; index++) opaque.next(index * 1000 / 60);
@@ -130,7 +125,6 @@ hidden.document.hidden = true;
 hidden.next(1000 / 30); // Covers the visibility-event race/fallback branch.
 assert.equal(hidden.calls.scene, beforeHiddenScene);
 assert.equal(hidden.state().textMotionLastFrame, undefined);
-assert.equal(hidden.state().timing.samples, 0);
 hidden.document.dispatch('visibilitychange');
 assert.equal(hidden.pending.size, 0, 'A hidden page cancels its main RAF instead of polling');
 assert.equal(hidden.state().frameSuspended, true);
@@ -139,7 +133,6 @@ hidden.document.hidden = false;
 hidden.document.dispatch('visibilitychange');
 hidden.next(300033.3333333333);
 assert.equal(hidden.state().textMotionTime, beforeHidden, 'The first resumed frame consumes none of the hidden 300 s');
-assert.equal(hidden.state().timing.samples, 0);
 hidden.next(300050);
 assert.ok(Math.abs(hidden.state().textMotionTime - beforeHidden - 1 / 60) < 1e-9);
 for (let index = 1; index <= 300; index++) {
@@ -162,6 +155,7 @@ const cache = fixture();
 cache.window.dispatch('pagehide', { persisted: true });
 assert.equal(cache.pending.size, 0);
 assert.equal(cache.calls.dispose.scene, 0, 'BFCache suspension preserves the renderer');
+assert.ok(Object.values(cache.calls.dispose).every(count => count === 0), 'BFCache also preserves CSS subscriptions, lyrics and view transitions');
 cache.window.dispatch('pageshow', { persisted: true });
 assert.equal(cache.pending.size, 1);
 cache.next(900000);
@@ -175,7 +169,7 @@ cache.resumePage();
 cache.window.dispatch('pageshow', { persisted: true });
 lateCallback(900050);
 assert.equal(cache.pending.size, 0, 'A stale callback cannot resurrect a disposed frame loop');
-assert.deepEqual(cache.calls.dispose, { scene: 1, boot: 1, overview: 1, player: 1, effects: 1, trackFocus: 1 }, 'Repeated disposal releases each resource exactly once');
+assert.deepEqual(cache.calls.dispose, { scene: 1, boot: 1, overview: 1, player: 1, effects: 1, trackFocus: 1, cssMotion: 1, lyrics: 1, lyricsSettings: 1, detailView: 1 }, 'Repeated disposal releases each resource exactly once');
 
 const loading = fixture({ ready: false });
 loading.resumePage();
@@ -199,7 +193,7 @@ function libraryFixture({ ready = true } = {}) {
   let timerId = 0;
   const compiled = new Function('response', 'timers', 'document', 'boot', 'calls', 'schedule', 'ready', `
     let frameDisposed = false, refreshing = false, libraryStateVersion = 0, apiAvailable = false, pollTimer;
-    const lightingDemo = false, library = { scan: { running: false } };
+    const demoRequested = false, library = { scan: { running: false } };
     const request = () => { calls.requests++; return response.promise; };
     const receiveLibrary = async () => { calls.received++; };
     const updateStatus = () => { calls.statuses++; }, updateIntroductionStatus = updateStatus, updateCreditsStatus = updateStatus;
@@ -275,7 +269,7 @@ function startupFixture({ waitAt, native = false, hidden = false, fontPreparatio
     const prepareGeneratedCoverFonts = fontPreparation
       ? () => { calls.push('cover-fonts'); return fontPreparation(); }
       : () => wait('cover-fonts');
-    const lightingLab = false, location = { search: '' }, selected = 7, sortLabel = { column: '歌手' }, renderQuality = 1;
+    const DEFAULT_LIGHTING_PRESET = {}, location = { search: '' }, selected = 7, sortLabel = { column: '歌手' }, renderQuality = 1;
     const stage = { dataset: {}, classList: { toggle() {}, add() {} } };
     let frameDisposed = false, frameSuspended = false, frameHandle = 0, scene, ready = false;
     const loadLibrary = force => wait(force ? 'library' : 'resume-library'), refreshAudioOutputs = () => wait('audio');
@@ -285,7 +279,7 @@ function startupFixture({ waitAt, native = false, hidden = false, fontPreparatio
     const requestAnimationFrame = callback => { pending.set(1, callback); return 1; }, frame = () => {};
     class ArchiveScene {
       constructor() { calls.push('construct-scene'); }
-      setMusicArrayMode() {} enableSelectionLighting() {} setTheme() {} setReduced() {}
+      setMusicArrayMode() {} enableSelectionLighting() {} setLightingExperiment() {} setTheme() {} setReduced() {}
       setQuality() { calls.push('configure-scene'); }
       async load(url, selection) { if (url !== undefined || selection !== 7) throw new Error('Selection must reach the single initial load'); await wait('model'); }
       prepareMusicRenderer() { return wait('prepare'); }
@@ -413,7 +407,7 @@ function scanningStartupFixture() {
     const navigator = {}, document = { hidden: false, fonts: { load: async () => {} } };
     const prepareGeneratedCoverFonts = async () => {};
     const preferences = { arrayMode: 'realistic', sortMode: 'genre', theme: 'day', reduced: false, audioBackend: 'browser' };
-    const lightingLab = false, lightingDemo = false, location = { search: '' }, sortLabel = { column: '流派' }, renderQuality = 1;
+    const DEFAULT_LIGHTING_PRESET = {}, demoRequested = false, location = { search: '' }, sortLabel = { column: '流派' }, renderQuality = 1;
     const stage = { dataset: {}, classList: { toggle() {}, add() {} } };
     const performance = { now: () => 6000 }, boot = { active: false, start() { this.active = true; } };
     let frameDisposed = false, frameSuspended = false, frameHandle = 0, scene, ready = false;
@@ -437,7 +431,7 @@ function scanningStartupFixture() {
     const requestAnimationFrame = callback => { pending.set(1, callback); return 1; }, frame = () => {};
     class ArchiveScene {
       columnCount = 0;
-      setMusicArrayMode() {} enableSelectionLighting() {} setTheme() {} setReduced() {} setQuality() {} setMode() {}
+      setMusicArrayMode() {} enableSelectionLighting() {} setLightingExperiment() {} setTheme() {} setReduced() {} setQuality() {} setMode() {}
       async load() { calls.sceneLoads++; this.columnCount = records.length; }
       async refreshLibrary() { calls.sceneRefreshes++; this.columnCount = records.length; }
       prepareMusicRenderer() { warming.resolve(); return warm.promise; }
@@ -482,7 +476,6 @@ assert.equal(scanningStartup.timers.size, 1);
 
 console.log(JSON.stringify({
   sourceHash: createHash('sha256').update(compiledCode).digest('hex').slice(0, 12),
-  steadyState: { callbacks: 601, sceneCalls: steady.calls.scene, pendingContinuations: steady.pending.size, fps: steady.state().timing.fps },
   opaqueBootSignal: { callbacks: 601, sceneCallsWhileOpaque: 0, respected: true },
   hiddenResume: { hiddenSceneCalls: 0, hiddenContinuations: 0, resumedTextClockJumpSeconds: 0, repeatedResumeCycles: 300 },
   disposal: cache.calls.dispose,

@@ -81,9 +81,6 @@ const NATIVE_WHEEL_TARGETS = [
   "[role=slider]",
   ".music-panel-scrim",
   "#music-detail",
-  ".lighting-lab",
-  ".animation-lab",
-  "[data-developer-panel]",
 ].join(",");
 
 function keepsNativeWheel(target: EventTarget | null, stage: HTMLElement) {

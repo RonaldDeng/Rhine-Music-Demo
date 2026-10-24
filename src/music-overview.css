@@ -168,14 +168,13 @@
 /* Keep the complete navigation row's dimensions. The persistent transport keeps
    the same x/y coordinates, including portrait's explicit five grid tracks. */
 .music-topnav > :not(.minimal-transport), .music-view-toggle,
-.music-dev-panels, .library-status, #runtime-info {
+.library-status, #runtime-info {
   transition: opacity calc(280ms * var(--music-motion-scale, 1)) ease,
     transform calc(360ms * var(--music-motion-scale, 1)) cubic-bezier(.4,0,.2,1),
     visibility 0s;
 }
 .music-app[data-overview="true"] .music-topnav > :not(.minimal-transport),
 .music-app[data-overview="true"] .music-view-toggle,
-.music-app[data-overview="true"] .music-dev-panels,
 .music-app[data-overview="true"] .library-status,
 .music-app[data-overview="true"] #runtime-info {
   opacity: 0; visibility: hidden; pointer-events: none; transform: translateY(-6px);
@@ -186,7 +185,6 @@
 .music-app.reduce-motion .overview-enter,
 .music-app.reduce-motion .music-topnav > :not(.minimal-transport),
 .music-app.reduce-motion .music-view-toggle,
-.music-app.reduce-motion .music-dev-panels,
 .music-app.reduce-motion .library-status,
 .music-app.reduce-motion #runtime-info { transition: none; }
 @media (max-width: 599px) {

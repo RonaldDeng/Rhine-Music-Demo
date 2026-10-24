@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import ts from "typescript";
 import {
   normalizeQuality,
   qualityPresets,
@@ -76,3 +78,43 @@ assert.equal(
 console.log(
   "Quality checks passed: migration, invalid storage, presets, supersampling and 48 device-limit combinations.",
 );
+
+// Exercise the actual original-mode settings summary. Removing development
+// diagnostics must not turn a real 16× texture setting into a reported 1×.
+const archiveSource = await readFile(new URL("../src/archive-main.ts", import.meta.url), "utf8");
+const archiveTree = ts.createSourceFile("archive-main.ts", archiveSource, ts.ScriptTarget.Latest, true);
+const summaryFunction = archiveTree.statements.find(node =>
+  ts.isFunctionDeclaration(node) && node.name?.text === "updateQualitySummary");
+assert.ok(summaryFunction);
+const summaryCode = ts.transpileModule(summaryFunction.getText(archiveTree), {
+  compilerOptions: { target: ts.ScriptTarget.ES2022 },
+}).outputText;
+function summaryFixture({ quality = qualityPresets.original, maximumAnisotropy = 16,
+  maximumTextureSize = 16384, scale = 1, dpr = 1 } = {}) {
+  const summary = { textContent: "" };
+  const host = { clientWidth: 1920, clientHeight: 1080,
+    getBoundingClientRect: () => ({ width: 1920 * scale }),
+    get dataset() { throw new Error("Settings must not depend on retired DOM diagnostics"); } };
+  const canvas = { width: 1920, height: 1080, parentElement: host };
+  const scene = { renderer: { domElement: canvas, capabilities: {
+    maxTextureSize: maximumTextureSize, getMaxAnisotropy: () => maximumAnisotropy,
+  } } };
+  const prefs = { rendering: { ...quality } };
+  const document = { querySelector: () => summary };
+  const update = new Function("document", "scene", "prefs", "renderDimensions", "devicePixelRatio",
+    `${summaryCode}\nreturn updateQualitySummary;`)(document, scene, prefs, renderDimensions, dpr);
+  update();
+  return { summary, prefs, update };
+}
+const originalSummary = summaryFixture();
+assert.equal(originalSummary.summary.textContent, "实际渲染 1920 × 1080 · 原始抗锯齿 · 纹理 16×");
+originalSummary.prefs.rendering.anisotropy = 2;
+originalSummary.update();
+assert.match(originalSummary.summary.textContent, /纹理 2×$/u, "Changing a preference immediately updates the displayed filtering");
+assert.match(summaryFixture({ maximumAnisotropy: 4 }).summary.textContent, /纹理 4×$/u,
+  "The user-facing summary respects the device's actual texture filtering limit");
+assert.match(summaryFixture({ quality: qualityPresets.ultra, scale: 2, dpr: 2 }).summary.textContent,
+  /SMAA · 纹理 16× · 已达到缓冲上限$/u, "The pixel budget limit remains visible without diagnostic attributes");
+assert.match(summaryFixture({ maximumTextureSize: 1024 }).summary.textContent, /已达到缓冲上限$/u,
+  "The hardware texture size limit also remains visible");
+console.log("Original quality summary passed: actual canvas size, selected/device-limited texture filtering, pixel and hardware limits, no DOM diagnostics.");

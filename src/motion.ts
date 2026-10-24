@@ -62,11 +62,6 @@ export function musicSelectionWave(distance: number, age: number) {
   );
 }
 
-// Retained for the comparison experiments; the user chose the signed baseline.
-export function selectionWave(distance: number, age: number) {
-  return Math.max(0, baselineSelectionWave(distance, age));
-}
-
 // The source stays still while the crest expands around it. Squaring the
 // positive cosine gives the ripple zero velocity at its leading/trailing edge.
 export function rippleEnvelope(distance: number, age: number) {

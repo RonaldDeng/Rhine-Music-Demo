@@ -9,7 +9,7 @@ document.addEventListener("dragstart", (event) => {
   }
 }, { capture: true });
 
-// Preserve the original experience as a visual reference while developing music mode.
+// Preserve the original archive experience alongside the music player.
 if (new URLSearchParams(location.search).get("original") === "1") {
   void import("./archive-main");
 } else {

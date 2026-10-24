@@ -1,0 +1,42 @@
+Noto Sans SC — local lyric font
+
+Copyright 2014-2021 Adobe (http://www.adobe.com/), with Reserved Font Name 'Source'
+Licensed under the SIL Open Font License, Version 1.1.
+The complete, unmodified license is included as NotoSansSC-OFL.txt.
+This font is not covered by this application's MIT code license.
+
+Official upstream:
+https://github.com/notofonts/noto-cjk
+Google Fonts distribution:
+https://github.com/google/fonts/tree/a85815a42757630ce188fdad368c2dfc444d4773/ofl/notosanssc
+Source binary:
+https://raw.githubusercontent.com/google/fonts/a85815a42757630ce188fdad368c2dfc444d4773/ofl/notosanssc/NotoSansSC%5Bwght%5D.ttf
+License source:
+https://raw.githubusercontent.com/google/fonts/a85815a42757630ce188fdad368c2dfc444d4773/ofl/notosanssc/OFL.txt
+
+Retrieved 2026-10-24. Font version 2.004-H2.
+Variable weight axis: 100–900. Regional Simplified Chinese font with 30,890
+Unicode character mappings, including many Traditional Chinese forms and Latin.
+Other unsupported characters retain the user's system fallback.
+
+The original variable TTF was converted to WOFF2 with fontTools 4.60.2 and
+Brotli. No glyph, character coverage, variation axis, or font name was changed.
+This container/format conversion is a Modified Version under the OFL.
+The reserved name 'Source' is not used as this font's primary name.
+Application-private CSS family alias: 'Rhine Noto Sans SC'.
+No font is fetched from a CDN while the application is running.
+
+Source TTF SHA-256:
+a3041811a78c361b1de50f953c805e0244951c21c5bd412f7232ef0d899af0da
+Bundled NotoSansSC-Variable.woff2 SHA-256:
+9a187d9139d8a5cc4f162410e700c1dfefcbe49ba8d83fdfbb7da8eb64d5aed9
+
+Conversion recipe (requires fontTools[woff] 4.60.2):
+from fontTools.ttLib import TTFont
+font = TTFont('NotoSansSC[wght].ttf')
+font.flavor = 'woff2'
+font.save('NotoSansSC-Variable.woff2')
+
+Fonts remain under the OFL. Do not sell the font by itself. When distributing
+it with the application, retain the copyright notice and complete OFL text.
+The original authors do not endorse this application or this format conversion.

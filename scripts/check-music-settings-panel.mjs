@@ -36,6 +36,10 @@ const motionSources = await Promise.all(['music-motion-settings.ts', 'music-moti
   return parsed.statements.filter(node => !ts.isImportDeclaration(node))
     .map(node => node.getText(parsed).replace(/^export\s+/, '')).join('\n');
 }));
+const lyricPreferencesSource = await readFile(new URL('../src/music-lyrics-preferences.ts', import.meta.url), 'utf8');
+const lyricPreferencesTree = ts.createSourceFile('music-lyrics-preferences.ts', lyricPreferencesSource, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+const lyricPreferencesCode = lyricPreferencesTree.statements.filter(node => !ts.isImportDeclaration(node))
+  .map(node => node.getText(lyricPreferencesTree).replace(/^export\s+/, '')).join('\n');
 const animations = [];
 class Animation {
   currentTime = 0; playbackRate = 1; playState = 'running';
@@ -67,7 +71,7 @@ const finishAnimations = async () => {
 
 let document;
 class Element {
-  children = []; attrs = {}; dataset = {}; hidden = false; inert = false; scrollTop = 0; tabIndex = 0; value = ''; writes = 0;
+  children = []; attrs = {}; style = {}; dataset = {}; hidden = false; inert = false; scrollTop = 0; tabIndex = 0; value = ''; writes = 0;
   constructor(tag = 'div') { this.tag = tag; }
   classList = { toggle() {} };
   animate(frames, options) { return new Animation(this, frames, options); }
@@ -117,20 +121,29 @@ class Element {
   }
 }
 document = new Element('document');
-document.innerHTML = '<div id="stage"><div id="music-overview"></div><button data-action="overview"></button><div class="lighting-lab"></div><div id="music-browse"></div><div id="music-detail"></div><header class="music-header"></header><div id="three-scene"></div><div id="music-panel-root"></div></div>';
+document.innerHTML = '<div id="stage"><div id="music-overview"></div><button data-action="overview"></button><div id="music-browse"></div><div id="music-detail"></div><header class="music-header"></header><div id="three-scene"></div><div id="music-panel-root"></div></div>';
 const $ = selector => { const node = document.querySelector(selector); assert.ok(node, `DOM port resolves ${selector}`); return node; };
-const calls = { mount: 0, transitions: [], requests: 0, search: 0, deferRequests: false, pendingRequests: [] };
+const calls = { mount: 0, transitions: [], requests: 0, search: 0, deferRequests: false, pendingRequests: [],
+  motionCleanup: { trackFocus: 0, tabTransition: 0, lyricsPane: 0, detailView: 0 } };
 const code = `
+  const { getLyricsPreferences, lyricsFontFamily, LYRICS_FONT_OPTIONS, LYRICS_FONT_SIZE_MIN, LYRICS_FONT_SIZE_MAX } = (() => {
+    ${lyricPreferencesCode}
+    return { getLyricsPreferences, lyricsFontFamily, LYRICS_FONT_OPTIONS, LYRICS_FONT_SIZE_MIN, LYRICS_FONT_SIZE_MAX };
+  })();
   let panel = null, panelClosing = false, pendingPanelAfter, panelFocus, panelTransition, introductionExchange, searchGenre = '';
   ${['settingsPage', 'settingsPageTransition', 'settingsScroll', 'libraryMainScroll'].map(name => declaration(name, 'variable')).join('\n')}
   const preferences = { theme: 'day', volume: 0, songTransition: 'fade-in-out', showSongTransitionControl: true,
     soundVolume: 0, bgmVolume: 0, sortMode: 'artist', arrayMode: 'filled', rememberColumnPosition: true };
   const themeNames = { day: '晨雾', night: '月影' }, sortLabels = { genre: { name: '按流派' }, artist: { name: '按歌手' }, album: { name: '按专辑名' } };
-  const appVersion = '0.5.0', lightingLab = false, renderQuality = {}, apiAvailable = false, demo = true;
+  const appVersion = '0.6.1', renderQuality = {}, apiAvailable = false, demo = true;
   const library = { roots: [], albums: [], genres: [] }, stage = $('#stage');
   const esc = value => value, cancelTrackReveal = () => {}, effects = { play() {} }, notify = () => {};
   const presentation = { phase: 'archive' }, overview = false;
   const transportTitleMotion = { setReduced() {} }, browseTransition = { finish() {} }, detailTransition = { finish() {} }, overviewUI = { finish() {} };
+  const detailViewTransition = { finish() { calls.motionCleanup.detailView++; } };
+  const trackFocus = { cancel() { calls.motionCleanup.trackFocus++; } };
+  const tabTransition = { cancel() { calls.motionCleanup.tabTransition++; } };
+  const lyricsPane = { finishMotion() { calls.motionCleanup.lyricsPane++; } };
   const syncSelectionMotion = () => {}, scene = { setReduced() {} }, updateSelection = () => {}, savePrefs = () => {};
   class SurfaceTransition extends ProductionSurfaceTransition {
     constructor(...args) { super(...args); calls.transitions.push(this); }
@@ -146,7 +159,7 @@ const code = `
     calls.requests++;
     return calls.deferRequests ? new Promise(resolve => calls.pendingRequests.push(resolve)) : { groups: [] };
   };
-  ${['openPanel', 'closePanel', 'renderSettingsPanel', 'renderLibraryPanel', 'libraryArrangementMarkup', 'introductionSectionMarkup', 'creditsSettingsMarkup', 'renderDisplaySettings', 'selectSettingsPage', 'showGenreEditor', 'editGenres'].map(name => declaration(name)).join('\n')}
+  ${['openPanel', 'closePanel', 'renderSettingsPanel', 'renderLibraryPanel', 'libraryArrangementMarkup', 'introductionSectionMarkup', 'creditsSettingsMarkup', 'lyricsSettingsMarkup', 'syncLyricsSettingsUI', 'renderDisplaySettings', 'selectSettingsPage', 'showGenreEditor', 'editGenres'].map(name => declaration(name)).join('\n')}
   function clickTab(page) {
     const target = { dataset: { settingsTab: page } };
     ${branch('click', 'target.dataset.settingsTab === "library" || target.dataset.settingsTab === "display"')}
@@ -163,8 +176,8 @@ const code = `
   return { openPanel, closePanel, clickTab, clickAction, key, editGenres, reduceMotion,
     state: () => ({ panel, settingsPage, settingsScroll, settingsPageTransition, introductionExchange }) };
 `;
-const fixture = new Function('document', '$', 'calls', 'ProductionSurfaceTransition', 'ContentTransition', transpile(code))(
-  document, $, calls, ProductionSurfaceTransition, ProductionContentTransition);
+const fixture = new Function('document', '$', 'calls', 'ProductionSurfaceTransition', 'ContentTransition', 'localStorage', transpile(code))(
+  document, $, calls, ProductionSurfaceTransition, ProductionContentTransition, { getItem: () => null });
 const selected = name => {
   assert.equal(document.querySelectorAll('.settings-page').filter(page => !page.hidden).length, 1,
     'Exactly one settings page participates in layout at every sampled instant');
@@ -320,6 +333,8 @@ fixture.clickTab('library');
 const reducedAnimation = runningContentAnimation();
 reducedAnimation.currentTime = 85;
 fixture.reduceMotion(true); await microtasks(); selected('library');
+assert.deepEqual(calls.motionCleanup, { trackFocus: 1, tabTransition: 1, lyricsPane: 1, detailView: 1 },
+  'Enabling reduced motion cancels track focus, detail tab reveal, and lyric scrolling once');
 assert.equal(firstPage.hidden, true, 'Enabling reduced motion keeps only the selected page visible');
 assert.equal(reducedAnimation.playState, 'idle', 'Enabling reduced motion cancels an in-flight content animation');
 assert.equal(computedStyle($('#panel-body')).opacity, '1', 'Cancellation restores fully opaque text immediately');
@@ -327,7 +342,10 @@ assert.equal(runningContentAnimation(), undefined);
 const beforeReducedSwitch = animations.length;
 fixture.clickTab('display'); selected('display');
 assert.equal(animations.length, beforeReducedSwitch, 'Reduced-motion tab changes do not schedule animation');
-fixture.reduceMotion(false); fixture.clickTab('library');
+fixture.reduceMotion(false);
+assert.deepEqual(calls.motionCleanup, { trackFocus: 1, tabTransition: 1, lyricsPane: 1, detailView: 1 },
+  'Disabling reduced motion does not cancel or finish unrelated controllers again');
+fixture.clickTab('library');
 const closingContent = $('#panel-body'), closingAnimation = runningContentAnimation();
 fixture.closePanel();
 await finishAnimations();

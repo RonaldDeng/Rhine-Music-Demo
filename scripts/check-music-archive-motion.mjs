@@ -192,7 +192,8 @@ const updateMethod = sceneClass.members.find(node => ts.isMethodDeclaration(node
 const trackStart = updateMethod.body.statements.findIndex(node => ts.isVariableStatement(node) &&
   node.declarationList.declarations.some(declaration => declaration.name.getText(sceneTree) === 'chosen'));
 const trackEnd = updateMethod.body.statements.findIndex((node, index) => index > trackStart &&
-  ts.isIfStatement(node) && node.expression.getText(sceneTree) === 'detailNavigation && this.reduced');
+  ts.isIfStatement(node) && node.thenStatement.getText(sceneTree).includes('this.shoulder =') &&
+  node.thenStatement.getText(sceneTree).includes('this.rail ='));
 assert.ok(trackStart >= 0 && trackEnd > trackStart, 'Extract the production archive track dispatch without copying its condition');
 const realColumnUpdate = updateMethod.body.statements.find(node =>
   ts.isIfStatement(node) && node.getText(sceneTree).includes('this.musicRealColumns.update('));

@@ -21,6 +21,7 @@ function sourceModule(path) {
 const timingModule = sourceModule('../src/music-boot-timing.ts');
 const { MusicBootFrameClock, MUSIC_BOOT_START_TIME: START, MUSIC_BOOT_END_TIME: END, MUSIC_BOOT_SCENE_REVEAL_TIME, MUSIC_BOOT_SCENE_START, musicBootSceneTime } = await import(timingModule);
 const { MusicBoot } = await import(sourceModule('../src/music-boot.ts'));
+const { setMusicMotionSpeed } = await import(sourceModule('../src/music-motion-settings.ts'));
 const { musicOpeningFrame, MUSIC_OPENING_CAPTION } = await import(sourceModule('../src/music-opening.ts'));
 const close = (actual, expected, message) => assert.ok(Math.abs(actual - expected) < 1e-9,
   `${message}: expected ${expected}, received ${actual}`);
@@ -78,6 +79,7 @@ class FakeAnimation {
     this.finished.catch(() => {});
     controlAnimations.push(this);
   }
+  updatePlaybackRate(rate) { this.playbackRate = rate; }
   finish() { this.resolve(); }
   cancel() { this.reject(new Error('cancelled')); }
 }
@@ -274,7 +276,7 @@ const flush = async () => { for (let i = 0; i < 6; i++) await Promise.resolve();
 // The initial focus belongs to the overlay, so the small skip text has no
 // automatic focus border. Keyboard users can still reach it, and either skip
 // gesture must complete once without leaking input through the control reveal.
-for (const mode of ['start', 'replayScene']) {
+for (const mode of ['start', 'replay']) {
   for (const trigger of ['click', 'Escape', 'Enter']) {
     const opener = new FakeElement(); document.activeElement = opener;
     const f = bootFixture(false, true);
@@ -396,144 +398,40 @@ for (const fps of [20,30,60,120]) {
   gate.boot.dispose();
 }
 
-// Compare the actual 3D-only replay with the live segment of the actual full
-// replay. The two paths must emit the same camera/array clock, not a shortened
-// or rewritten animation that merely ends on the same selected album.
-for (const fps of [20, 30, 60, 120]) {
-  const full = bootFixture(), sceneOnly = bootFixture();
-  full.boot.start(100);
-  let fullFrame;
-  for (let frame = 0; frame <= Math.round(MUSIC_BOOT_SCENE_START * fps); frame++)
-    fullFrame = full.boot.update(100 + frame / fps);
-  sceneOnly.boot.replayScene(500);
-  const opening = sceneOnly.boot.root.children[0];
-  const skip = sceneOnly.boot.root.children[1];
-  assert.ok(opening.hidden, 'The entire MusicOpening paper/text subtree is hidden before the first 3D replay frame');
-  assert.equal(sceneOnly.boot.root.attributes.get('aria-label'), '专辑阵列入场');
-  assert.equal(skip.textContent, '跳过进场');
-  assert.equal(skip.hidden, false);
-  assert.equal(sceneOnly.boot.root.dataset.appTime, String(MUSIC_BOOT_SCENE_START));
-  const first = sceneOnly.boot.update(500);
-  assert.equal(first.appTime, MUSIC_BOOT_SCENE_START);
-  assert.equal(first.cinema.time, 21.92);
-  assert.equal(first.phase, 'array');
-  assert.equal(first.renderScene, true, 'The first replay frame renders WebGL without waiting for a paper dissolve');
-  const frames = Math.round((END - MUSIC_BOOT_SCENE_START) * fps);
-  for (let frame = 0; frame <= frames; frame++) {
-    const current = frame === 0 ? first : sceneOnly.boot.update(500 + frame / fps);
-    if (frame > 0) fullFrame = full.boot.update(100 + MUSIC_BOOT_SCENE_START + frame / fps);
-    assert.ok(current && fullFrame, `Both paths expose the complete shelf frame at ${fps} fps`);
-    assert.ok(current.renderScene && opening.hidden, 'Every 3D-only frame renders the shelf while the 2D subtree stays hidden');
-    assert.ok(current.phase === 'array' || current.phase === 'select', 'No logo/orbit/slogan phase can return during scene replay');
-    close(current.appTime, fullFrame.appTime, 'Scene-only and full-film live segments use the same edit clock');
-    close(current.cinema.time, fullFrame.cinema.time, 'Camera, wave and row lighting receive the unchanged scene time');
-    close(current.cinema.reveal, fullFrame.cinema.reveal, 'The authored array reveal is unchanged');
-    assert.equal(current.cinema.lift, fullFrame.cinema.lift);
-    assert.equal(current.cinema.zoom, fullFrame.cinema.zoom);
-    assert.equal(current.cinema.musicIntro, true);
-  }
-  assert.equal(sceneOnly.boot.root.dataset.appTime, String(END));
-  assert.deepEqual(sceneOnly.completed, [], 'Scene-only playback renders the endpoint before handing control back');
-  assert.equal(sceneOnly.boot.update(500 + (frames + 1) / fps), undefined);
-  assert.deepEqual(sceneOnly.completed, ['complete']);
-  await flush();
-  assert.ok(!sceneOnly.boot.active && sceneOnly.boot.root.hidden && opening.hidden);
-  assert.equal(sceneOnly.controls.inert, false);
-  assert.equal(sceneOnly.controls.style.getPropertyValue('visibility'), 'collapse');
-  assert.equal(sceneOnly.controls.style.getPropertyPriority('visibility'), 'important');
-  sceneOnly.boot.dispose(); full.boot.dispose();
-}
-
-// Reuse one controller while interrupting both running films and the control
-// handoff. No old reveal promise may unlock/hide a newly started replay.
+// Replay the complete released opening while interrupting the film and its
+// control handoff. A retired scene-only study path is never exposed.
+assert.equal(typeof MusicBoot.prototype.replayScene, 'undefined');
 {
-  const f = bootFixture(false, true), opening = f.boot.root.children[0], skip = f.boot.root.children[1];
+  const f = bootFixture(false, true), opening = f.boot.root.children[0];
   f.navigation.style.setProperty('visibility', 'collapse', 'important');
   f.navigation.inert = true;
-  f.button.style.setProperty('visibility', 'hidden', 'important'); f.button.inert = true;
-  f.boot.replayScene(0);
-  assert.equal(f.boot.update(0).appTime, MUSIC_BOOT_SCENE_START);
-  assert.ok(opening.hidden && f.scene.inert);
-  assert.equal(f.scene.style.getPropertyValue('visibility'), '', 'The real renderer remains visible throughout scene replay');
-  assert.equal(f.header.style.getPropertyValue('visibility'), 'hidden', 'Scene-only replay also hides the fixed brand and navigation');
-  f.boot.update(1 / 60);
-  f.boot.replay(20);
-  assert.equal(f.boot.update(20).appTime, START, 'Full replay after 3D-only restarts at the slogan');
-  assert.ok(!opening.hidden, 'Full replay explicitly restores MusicOpening after a scene-only replay');
-  assert.equal(skip.textContent, '跳过进场');
-  assert.equal(f.boot.root.attributes.get('aria-label'), '音乐开场：ONE ALBUM AT A TIME');
-  f.boot.replayScene(30);
-  assert.equal(f.boot.update(30).appTime, MUSIC_BOOT_SCENE_START, 'Full→3D uses its own start point without inheriting film progress');
-  assert.ok(opening.hidden);
-  assert.equal(f.started, 3, 'Every replay mode invokes the existing camera/scene reset hook');
-  assert.deepEqual(f.completed, [], 'Replacing a running replay does not issue a stale completion');
+  f.boot.start(0); f.boot.update(0);
   const oldRevealStart = controlAnimations.length;
   f.boot.skip();
   const oldReveal = controlAnimations.slice(oldRevealStart);
-  assert.equal(f.stage.dataset.musicBoot, 'revealing');
-  assert.ok(opening.hidden && skip.hidden);
-  assert.deepEqual(f.completed, ['skip']);
-  f.boot.replayScene(40);
+  f.boot.replay(20);
   oldReveal.forEach(animation => animation.finish()); await flush();
-  assert.equal(f.stage.dataset.musicBoot, 'running', 'The obsolete control fade cannot complete a new scene replay');
-  assert.ok(f.boot.active && opening.hidden && !skip.hidden);
-  assert.equal(f.boot.update(40).appTime, MUSIC_BOOT_SCENE_START);
-  assert.equal(f.header.inert, true);
-  const nextRevealStart = controlAnimations.length;
-  f.boot.skip();
-  const nextReveal = controlAnimations.slice(nextRevealStart);
-  f.boot.start(50);
-  nextReveal.forEach(animation => animation.finish()); await flush();
-  assert.equal(f.stage.dataset.musicBoot, 'running');
-  assert.equal(f.boot.update(50).appTime, START, 'Ordinary start retains full-film semantics after a scene-only handoff');
-  assert.ok(!opening.hidden);
-  f.boot.replayScene(60); f.boot.dispose();
-  assert.ok(!f.boot.active && !f.boot.root.isConnected, 'Disposal interrupts a running 3D replay without leaving an overlay');
+  assert.equal(f.stage.dataset.musicBoot, 'running', 'An obsolete reveal cannot complete a newer replay');
+  assert.ok(f.boot.active && !opening.hidden && f.header.inert);
+  assert.equal(f.boot.update(20).appTime, START, 'Every replay includes the slogan');
+  f.boot.replay(30);
+  assert.equal(f.boot.update(30).appTime, START, 'Restarting a running opening resets its clock');
+  assert.deepEqual(f.completed, ['skip'], 'Replacing a running film does not issue a stale completion');
+  f.boot.dispose();
+  assert.ok(!f.boot.active && !f.boot.root.isConnected);
   assert.equal(f.scene.inert, false);
   assert.equal(f.header.inert, false);
   assert.equal(f.navigation.inert, true);
   assert.equal(f.navigation.style.getPropertyValue('visibility'), 'collapse');
   assert.equal(f.navigation.style.getPropertyPriority('visibility'), 'important');
-  assert.equal(f.button.inert, true);
-  assert.equal(f.button.style.getPropertyValue('visibility'), 'hidden');
-  assert.deepEqual(f.completed, ['skip', 'skip'], 'Disposal does not synthesize another complete/skip callback');
   const started = f.started;
-  f.boot.replayScene(70); f.boot.replay(80);
-  assert.equal(f.started, started, 'A disposed controller cannot restart either replay mode');
-}
-{
-  const f = bootFixture(false, true);
-  f.boot.replayScene(0);
-  const revealStart = controlAnimations.length;
-  f.boot.skip();
-  const oldReveal = controlAnimations.slice(revealStart);
-  f.boot.dispose(); oldReveal.forEach(animation => animation.finish()); await flush();
-  assert.ok(!f.boot.active && !f.boot.root.isConnected);
-  assert.equal(f.stage.dataset.musicBoot, 'done');
-  assert.equal(f.header.inert, false);
-  assert.equal(f.navigation.inert, false, 'Disposal during a 3D control reveal restores interaction state');
-  assert.equal(f.navigation.style.getPropertyValue('visibility'), '');
-}
-
-// Reduced motion remains an immediate skip for either mode, including a live
-// preference change during the 3D move or its control reveal.
-{
-  const f = bootFixture(true);
-  f.boot.replayScene(0);
-  assert.equal(f.started, 1);
-  assert.deepEqual(f.completed, ['skip']);
-  assert.ok(!f.boot.active && f.boot.root.children[0].hidden);
-  assert.equal(f.boot.update(1), undefined);
-  f.boot.replay(20); f.boot.replayScene(30);
-  assert.deepEqual(f.completed, ['skip', 'skip', 'skip']);
-  assert.equal(f.started, 3);
-  assert.ok(!f.boot.active);
-  f.boot.dispose();
+  f.boot.start(40); f.boot.replay(50);
+  assert.equal(f.started, started, 'A disposed controller cannot restart');
 }
 for (const duringReveal of [false, true]) {
   let reduce = false;
   const f = bootFixture(() => reduce, true);
-  f.boot.replayScene(0); f.boot.update(0);
+  f.boot.replay(0); f.boot.update(0);
   if (duringReveal) f.boot.skip();
   reduce = true;
   assert.equal(f.boot.update(1 / 60), undefined);
@@ -544,4 +442,26 @@ for (const duringReveal of [false, true]) {
   assert.equal(f.scene.inert, false);
   f.boot.dispose();
 }
-console.log('Music boot passed: centered English slogan fades/holds/fades without logo or subtitles, 7s full film and 1.72s WebGL gate; scene-only replay immediately matches the original 5.2s shelf/camera/light clock at 20/30/60/120fps; fixed header hidden during both modes, restored in one fade; full↔3D/reveal interruption, nested control restoration, cold/suspended clock, exact endpoint, keyboard/click skip, disposal and live reduced motion.');
+console.log('Music boot passed: centered English slogan, unchanged 7s full film and 1.72s WebGL gate; original shelf/camera/light timeline; full replay and handoff interruption, nested control restoration, cold/suspended clock, exact endpoint, keyboard/click skip, disposal and live reduced motion.');
+
+
+for (const speed of [.25, 1, 3]) {
+  setMusicMotionSpeed(speed);
+  const f = bootFixture(false, true);
+  f.boot.start(0);
+  for (let frame = 0; frame <= 420; frame++) f.boot.update(frame / 60);
+  assert.equal(f.boot.root.dataset.appTime, String(END), 'The authored film is still exactly 7 seconds at every UI speed');
+  const revealStart = controlAnimations.length;
+  f.boot.update(421 / 60);
+  const reveals = controlAnimations.slice(revealStart);
+  assert.ok(reveals.length > 0);
+  assert.ok(reveals.every(animation => animation.playbackRate === speed));
+  assert.ok(reveals.every(animation => animation.options.duration + animation.options.delay === 720));
+  const nextSpeed = speed === 3 ? .25 : 3;
+  setMusicMotionSpeed(nextSpeed);
+  assert.ok(reveals.every(animation => animation.playbackRate === nextSpeed), 'Controls retime without restarting their reveal');
+  f.boot.dispose();
+  await flush();
+}
+setMusicMotionSpeed(1);
+console.log('Boot handoff passed: independent 7s film, globally scaled 720ms controls at 0.25/1/3×, live retiming, cleanup.');

@@ -5,6 +5,7 @@ import { promises as fs, createReadStream } from 'node:fs'
 import { MusicLibraryStore, safeRootList } from './music-library.mjs'
 import { AudioDecoder, NativeAudioOutput } from './music-audio.mjs'
 import { INTRODUCTION_EXCHANGE_LIMIT } from './album-introduction-exchange.mjs'
+import { MusicLyricsService } from './music-lyrics.mjs'
 
 const PROJECT_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.woff': 'font/woff', '.woff2': 'font/woff2', '.glb': 'model/gltf-binary', '.gltf': 'model/gltf+json', '.wav': 'audio/wav', '.mp3': 'audio/mpeg', '.ogg': 'audio/ogg', '.opus': 'audio/ogg', '.ico': 'image/x-icon', '.webmanifest': 'application/manifest+json' }
@@ -92,6 +93,7 @@ export async function createMusicServer({
   const store = providedStore ?? await new MusicLibraryStore({ dataDir, defaultRoots }).init()
   const decoder = new AudioDecoder({ dataDir: store.dataDir ?? dataDir })
   const output = new NativeAudioOutput({ dataDir: store.dataDir ?? dataDir, decoder, trackFile: (id) => store.trackFile(id) })
+  const lyrics = new MusicLyricsService()
   const server = http.createServer(async (request, response) => {
     response.setHeader('X-Content-Type-Options', 'nosniff')
     response.setHeader('Referrer-Policy', 'same-origin')
@@ -135,6 +137,29 @@ export async function createMusicServer({
         // A user or Codex can edit genre-rules.json while the player is running.
         await store.reloadRules()
         return json(response, 200, store.snapshot())
+      }
+      const lyricRoute = /^\/api\/lyrics\/([a-zA-Z0-9-]+)$/.exec(route)
+      if (lyricRoute && (request.method === 'GET' || request.method === 'POST')) {
+        const refresh = request.method === 'POST'
+        if (refresh) {
+          const value = await bodyJson(request)
+          if (value.online !== true || Object.keys(value).some(key => key !== 'online')) return json(response, 400, { error: '重新查找仅接受 { online: true } 请求' })
+        }
+        const trackId = lyricRoute[1]
+        const album = store.snapshot().albums.find(item => item.tracks.some(track => track.id === trackId))
+        const track = album?.tracks.find(item => item.id === trackId)
+        const descriptor = store.trackFile(trackId)
+        if (!track || !descriptor) return json(response, 404, { error: '曲目不在当前音乐库中' })
+        const controller = new AbortController()
+        const cancel = () => { if (!response.writableEnded) controller.abort() }
+        response.once('close', cancel)
+        try {
+          // The current song falls back online automatically when local timed lyrics are absent.
+          // POST is an explicit retry and bypasses an earlier missing/error result.
+          const result = await lyrics.lookup({ track, album, descriptor }, { online: true, refresh, signal: controller.signal })
+          if (!response.destroyed) return json(response, 200, result)
+        } finally { response.removeListener('close', cancel) }
+        return
       }
       if (route === '/api/library/scan' && request.method === 'POST') {
         const value = await bodyJson(request)

@@ -54,6 +54,7 @@ function fixture(saved) {
   const detailNavigation = { hidden: false };
   const stage = { dataset: {}, querySelectorAll: () => buttons, querySelector: () => detailNavigation };
   const code = `
+    const preferencesKey = 'rhine-music-preferences', isReviewMode = false;
     ${variable('read')}
     ${variable('save')}
     ${variable('preferences')}

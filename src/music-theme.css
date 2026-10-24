@@ -259,6 +259,13 @@
   --music-day-top-clear: 2%;
   --music-day-bottom-clear: 92%;
 }
+/* Accepted landscape info-only patch. Keep the existing camera-ready gate,
+   registered gradient properties and global theme/surface transition clock. */
+.music-app[data-theme="day"][data-mode="detail"][data-detail-view="info"][data-day-reading="ready"]:not([data-layout="portrait"]) {
+  --music-day-veil-start: 41%;
+  --music-day-veil-mid: 53.5%;
+  --music-day-veil-end: 87.5%;
+}
 /* A rotated shell aligns before returning to the shelf. Keep its clearance
    until the existing presentation controller releases ordinary browsing. */
 .music-app[data-mode="archive"][data-presentation="returning"]:not([data-overview="true"]):not([data-layout="portrait"]) {

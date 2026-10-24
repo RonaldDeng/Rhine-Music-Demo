@@ -652,36 +652,6 @@ export class ModelViewer {
     if (this.theme) this.themeAppearance.update(this.camera);
     if (this.quality.antialias === "smaa") this.pipeline.composer.render();
     else this.renderer.render(this.scene, this.camera);
-    this.root.dataset.stats = JSON.stringify({
-      ready: Boolean(this.source),
-      theme: this.theme ?? "baseline",
-      clarity: this.clarity.value,
-      targetClarity: this.targetClarity,
-      spread: this.spread.value,
-      target: this.targetSpread,
-      distance: this.camera.position.distanceTo(this.cameraMotion.focus),
-      targetPosition: this.cameraMotion.focus.toArray(),
-      requestedTarget: this.controls.target.toArray(),
-      requestedDistance: this.controlCamera.position.distanceTo(
-        this.controls.target,
-      ),
-      cameraPosition: this.camera.position.toArray(),
-      resetting: this.cameraMotion.resetting,
-      azimuth: this.controls.getAzimuthalAngle(),
-      polar: this.controls.getPolarAngle(),
-      parts: [...this.groups].map(([id, group]) => ({
-        id,
-        z: group.position.z,
-        meshes: group.children.length,
-      })),
-      albumCover: this.albumCover ? {
-        albumId: this.albumCover.album.id,
-        part: this.albumCover.mesh.parent?.name,
-        localZ: this.albumCover.mesh.position.z,
-        partZ: this.albumCover.mesh.parent?.position.z,
-        status: this.albumCover.mesh.userData.coverStatus,
-        imageSize: this.albumCover.mesh.userData.coverImageSize,
-      } : null,
-    });
+
   }
 }

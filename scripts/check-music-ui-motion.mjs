@@ -89,7 +89,10 @@ function fixture(t) {
     setTimeout: (callback, delay = 0) => { timers.set(++nextId, { callback, at: now + delay }); return nextId; },
     clearTimeout: id => timers.delete(id),
     window: { addEventListener() {}, removeEventListener() {} },
-    document: { hidden: false, createElement: () => new Element(), activeElement: null },
+    document: { hidden: false, listeners: new Map(),
+      addEventListener(name, listener) { this.listeners.set(name, listener); },
+      removeEventListener(name) { this.listeners.delete(name); },
+      createElement: () => new Element(), activeElement: null },
     getComputedStyle: element => ({ getPropertyValue: key => element.style.getPropertyValue(key) }),
   };
   const originals = new Map(Object.keys(overrides).map(key => [key, Object.getOwnPropertyDescriptor(globalThis, key)]));
@@ -339,4 +342,20 @@ test('finite short, single and empty rulers expose only existing albums', t => {
     assert.ok(host.children.filter(button => button.disabled).every(button => button.tabIndex === -1));
     assert.equal(host.children.length, 16);
   }
+});
+
+
+test('hidden pages cancel track scrolling without later focus theft', t => {
+  const f = fixture(t);
+  const { container, row, focus } = trackFixture(f);
+  focus.reveal(container, row, false);
+  f.advance(120, 10);
+  const before = container.scrollTop;
+  document.hidden = true;
+  document.listeners.get('visibilitychange')();
+  f.advance(10000);
+  assert.equal(container.scrollTop, before);
+  assert.notEqual(document.activeElement, row);
+  assert.equal(container.listeners.size, 0);
+  assert.equal(document.listeners.size, 0);
 });

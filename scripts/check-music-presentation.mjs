@@ -635,6 +635,7 @@ test('production showMenu delays only landscape daylight and starts text, focus 
   const bindHook = new Function('bindings', `
     const { $, stage, detailTransition, preferences, syncDetailAlignment, panel, documentDecryption } = bindings;
     let pendingDetailFocus = false;
+    const detailView = "info", lyricsPane = undefined;
     ${outputText}
     return { invoke: showMenu, pendingFocus: () => pendingDetailFocus };
   `);

@@ -1175,16 +1175,6 @@ export class ArchiveScene {
       Math.max(1, Math.floor(dimensions.width * this.quality.aoResolution)),
       Math.max(1, Math.floor(dimensions.height * this.quality.aoResolution)),
     );
-    this.container.dataset.renderQuality = JSON.stringify({
-      ...JSON.parse(this.container.dataset.renderQuality!),
-      aoSamples: this.ao.enabled ? this.aoKernelSize : 0,
-      aoWidth: this.ao.width,
-      aoHeight: this.ao.height,
-      shadows: this.renderer.shadowMap.enabled
-        ? this.light.shadow.mapSize.x
-        : 0,
-      depthOfField: this.bokeh.enabled ? this.quality.depthOfField : 0,
-    });
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
   }
@@ -1308,13 +1298,19 @@ export class ArchiveScene {
     render = true,
   ) {
     if (this.disposed) return;
-    const realDt = Math.min(time - this.last || 0.016, 0.05);
+    const realDt = musicLibrary
+      ? Math.max(0, Math.min(time - this.last, 0.05))
+      : Math.min(time - this.last || 0.016, 0.05);
     // Advance a shared animation timeline, preserving the authored intro and
     // reduced-motion response. Row lighting receives this same dt exactly once.
     const speed = musicLibrary && !cinematic && !this.reduced ? getMusicMotionSpeed() : 1;
     const dt = realDt * speed;
     this.last = time;
-    this.clock = time;
+    // Idle waves, selection ripples and their lifetime use the same scaled
+    // timeline as the camera. The authored intro seeds an unscaled phase, so
+    // its handoff stays continuous and a live speed edit cannot jump a wave.
+    this.clock = musicLibrary && !cinematic ? this.clock + dt : time;
+    const motionTime = this.clock;
     if (!this.loaded) return;
     if (this.themeTransition) {
       if (this.themeTransition.update(time, speed)) this.themeTransition = undefined;
@@ -1328,6 +1324,7 @@ export class ArchiveScene {
     const blend = 1 - Math.exp(-dt * (this.reduced ? 35 : 2.8));
     this.reveal = cinematic
       ? cinematic.reveal
+      : musicLibrary && this.reduced ? this.targetReveal
       : THREE.MathUtils.lerp(this.reveal, this.targetReveal, blend);
     const inspecting = this.targetDetail && (!musicLibrary || this.musicPresentation.placed);
     const aligningSelection = musicLibrary && this.musicNavigationLift && this.returnY !== null;
@@ -1380,7 +1377,7 @@ export class ArchiveScene {
       damp(this.rail, archiveTargets.rail, archiveRates.rail, dt);
       this.musicArchiveMotion.observe(archiveTracks, archiveTargets, archiveRates);
     }
-    if (detailNavigation && this.reduced) {
+    if (musicLibrary && !cinematic && this.reduced) {
       this.shoulder = { value: selectedRow, velocity: 0 };
       this.laneFocus = { value: selectedLane, velocity: 0 };
       this.columnCamera = { value: chosen.x, velocity: 0 };
@@ -1420,7 +1417,7 @@ export class ArchiveScene {
         (this.cells[i].row + this.musicColumnRowOffset(this.cells[i].lane) - 15.5) * ROW_SPACING,
       );
     }
-    this.pulses = this.pulses.filter((p) => time - p.time < 3.2);
+    this.pulses = this.pulses.filter((p) => motionTime - p.time < 3.2);
     const aligningCopy = this.outgoing.some((o) => o.returnY !== null);
     const idle =
       !cinematic &&
@@ -1430,7 +1427,7 @@ export class ArchiveScene {
       this.detail < 0.01 &&
       this.returnY === null &&
       !aligningCopy &&
-      time - this.lastInteraction > 2.5;
+      motionTime - this.lastInteraction > 2.5;
     // Each column blends into this live field on its own settle clock. It must
     // already be moving before boot completes, with the same phase afterward.
     this.idleGain = musicLibrary && this.reduced ? 0 : musicIntro ? 1 : cinematic
@@ -1456,9 +1453,9 @@ export class ArchiveScene {
         const depth = row + this.musicColumnRowOffset(lane) - selectedRow;
         const opening = musicIntroWave(depth, relativeLane, shot);
         const resting = this.musicArrayMode === "realistic"
-          ? this.musicRealColumnField(row, lane, time)
+          ? this.musicRealColumnField(row, lane, motionTime)
           : settlingWave(row - selectedRow, 26.56) * columnStrength(lane, selectedLane) +
-            idleWave(row + this.coordinateOrigin.row, lane + this.coordinateOrigin.lane, time) * this.idleGain;
+            idleWave(row + this.coordinateOrigin.row, lane + this.coordinateOrigin.lane, motionTime) * this.idleGain;
         return THREE.MathUtils.lerp(opening, resting, musicIntroLaneSettle(relativeLane, shot));
       }
       if (cinematic)
@@ -1469,7 +1466,7 @@ export class ArchiveScene {
           this.shoulder.value,
           this.laneFocus.value,
         );
-      if (musicLibrary && this.musicArrayMode === "realistic") return this.musicRealColumnField(row, lane, time);
+      if (musicLibrary && this.musicArrayMode === "realistic") return this.musicRealColumnField(row, lane, motionTime);
       let height =
         archiveWave(
           row + this.coordinateOrigin.row,
@@ -1480,14 +1477,14 @@ export class ArchiveScene {
         idleWave(
           row + this.coordinateOrigin.row,
           lane + this.coordinateOrigin.lane,
-          time,
+          motionTime,
         ) *
           this.idleGain;
       if (!cinematic && !this.reduced) {
         let ripple = 0;
         for (const p of this.pulses) {
           const distance = Math.hypot(row - p.row, (lane - p.lane) * 2.2);
-          const age = time - p.time;
+          const age = motionTime - p.time;
           ripple +=
             (musicLibrary ? musicSelectionWave(distance, age) : this.selectionPulse(distance, age)) *
             (this.deferSelectionPulse ? rippleEnvelope(distance, age) : 1);
@@ -1573,8 +1570,8 @@ export class ArchiveScene {
       const o = this.outgoing[i];
       const p = this.cellPosition(o.cell);
       const baseY = p.y + field(o.cell.row, o.cell.lane);
-      o.group.rotation.y = detailNavigation && this.reduced ? 0 : returnStep(o.group.rotation.y, dt, this.reduced);
-      if (detailNavigation && this.reduced) {
+      o.group.rotation.y = musicLibrary && this.reduced ? 0 : returnStep(o.group.rotation.y, dt, this.reduced);
+      if (musicLibrary && this.reduced) {
         o.returnY = null;
         o.lift = { value: 0, velocity: 0 };
       } else if (o.returnY !== null) {
@@ -1934,14 +1931,6 @@ export class ArchiveScene {
       detail > 0.9 &&
       this.pulseGain < 0.01 &&
       this.clearance > (musicLibrary ? 0.05 : 0.3);
-    this.container.dataset.inspection =
-      this.returnY !== null
-        ? "aligning"
-        : this.canInspect
-          ? "ready"
-          : this.targetDetail
-            ? "lifting"
-            : "preview";
     const focalPoint = this.model.position
       .clone()
       .add(new THREE.Vector3(0, 2, 0))
@@ -2005,12 +1994,7 @@ export class ArchiveScene {
     }
     if (this.disposed) return;
     this.setMode("hidden");
-    this.container.dataset.startupPreparation = JSON.stringify({
-      milliseconds: Math.round(performance.now() - started),
-      parallelCompile: this.renderer.extensions.has("KHR_parallel_shader_compile"),
-      glError: this.renderer.getContext().getError(),
-      covers: this.covers?.getStats(),
-    });
+
   }
   /** Release GPU ownership on reload, instead of waiting for tab/process GC. */
   dispose() {
@@ -2068,103 +2052,4 @@ export class ArchiveScene {
         this.detail === 0 && Math.abs(this.rotation) < 0.02));
   }
   get musicPresentationPhase() { return this.musicPresentation.phase; }
-  getStats() {
-    this.model.updateMatrixWorld(true);
-    const project = (x: number, y: number, z: number) => {
-      const p = this.model
-        .localToWorld(new THREE.Vector3(x, y, z))
-        .project(this.camera);
-      return [Math.round((p.x + 1) * this.container.clientWidth / 2), Math.round((1 - p.y) * this.container.clientHeight / 2)];
-    };
-    return {
-      covers: this.covers?.getStats(),
-      arrayMode: this.musicArrayMode,
-      graphics: { geometries: this.renderer.info.memory.geometries,
-        textures: this.renderer.info.memory.textures, programs: this.renderer.info.programs?.length,
-        contextLost: this.renderer.getContext().isContextLost() },
-      visibleAlbumCells: this.cells.filter((cell) => this.actualCell(cell)).length,
-      uniqueAlbumCells: new Set(this.cells.filter((cell) => this.actualCell(cell)).map((cell) => fileAtCell(cell))).size,
-      decryption: { ...this.decryption.frame, clarity: this.decryption.clarity },
-      topLeft: project(-2.5, 3.7, 0),
-      topRight: project(2.5, 3.7, 0),
-      projectedCenter: project(0, MUSIC_MODEL.center.y, 0),
-      labelTopLeft: project(-1.855, 3.27, 0.255),
-      labelBottomLeft: project(-1.855, 2.81, 0.255),
-      modelPosition: this.model.position
-        .toArray()
-        .map((v) => Math.round(v * 10000) / 10000),
-      cameraPosition: this.camera.position
-        .toArray()
-        .map((v) => Math.round(v * 10000) / 10000),
-      cameraAim: this.cameraAim.toArray().map((v) => Math.round(v * 10000) / 10000),
-      fieldOfView: this.camera.fov,
-      loaded: this.loaded,
-      drawCalls: this.renderer.info.render.calls,
-      triangles: this.renderer.info.render.triangles,
-      archiveCount: this.positions.length,
-      returningFiles: this.outgoing.length,
-      selectionPhase: this.pendingPulse
-        ? "lifting"
-        : this.pulses.length
-          ? "wave"
-          : "settled",
-      pendingPulse: this.pendingPulse ? { ...this.pendingPulse } : null,
-      pulses: this.pulses.map((pulse) => ({ ...pulse })),
-      referenceTime: Math.round((this.scanTime + 5) * 100) / 100,
-      selectedSlot: this.selectedSlot,
-      selectedLane: Math.floor(this.selectedSlot / slotStride),
-      selectedAlbumId: records[fileAtSlot(this.selectedSlot)]?.album?.id ?? null,
-      albumCovers: this.covers?.array.visible ?? false,
-      theme: this.theme,
-      selectionLight: this.selectionLighting ? {
-        experiment: this.selectionLighting.getExperiment(),
-        ribbon: this.selectionLighting.getRowMotion(),
-        visible: this.selectionLighting.spot.visible,
-        position: this.selectionLighting.spot.position.toArray(),
-        target: this.selectionLighting.spot.target.position.toArray(),
-      } : null,
-      selectedCell: { ...this.selectedCell },
-      coordinateOrigin: { ...this.coordinateOrigin },
-      poolBounds: {
-        minLane: Math.min(...this.cells.map((c) => c.lane)),
-        maxLane: Math.max(...this.cells.map((c) => c.lane)),
-        minRow: Math.min(...this.cells.map((c) => c.row)),
-        maxRow: Math.max(...this.cells.map((c) => c.row)),
-      },
-      laneFocus: this.laneFocus.value,
-      columnCamera: this.columnCamera.value,
-      rotation: this.rotation,
-      clearance: this.clearance,
-      canInspect: this.canInspect,
-      returnPhase: this.returnY !== null ? "aligning" : "lowering",
-      extraction: Math.round(this.lift.value * 1000) / 1000,
-      previewLift: musicLibrary ? MUSIC_PREVIEW_LIFT : 0.4,
-      appearance: Math.round(ease(this.lift.value / 0.4) * 1000) / 1000,
-      cameraDetail: Math.round(this.detail * 1000) / 1000,
-      musicPresentationPhase: this.musicPresentationPhase,
-      musicPlacement: { progress: this.musicPlacement.value, velocity: this.musicPlacement.velocity,
-        settled: this.musicPlacement.settled },
-      musicArchiveMotion: { active: this.musicArchiveMotion.active, progress: this.musicArchiveMotion.progress,
-        duration: this.musicArchiveMotion.durationSeconds, tracks: this.musicArchiveMotion.state },
-      musicNavigationLift: this.musicNavigationLift,
-      musicPresentationReady: this.musicPresentationReady,
-      musicArchiveReady: this.musicArchiveReady,
-      idleGain: this.idleGain,
-      cameraDistance: this.camera.position.distanceTo(this.cameraAim),
-      cameraNear: this.camera.near,
-      cameraFar: this.camera.far,
-      fogNear: (this.scene.fog as THREE.Fog).near,
-      fogFar: (this.scene.fog as THREE.Fog).far,
-      returningAppearance: this.outgoing.map((o) => ({
-        slot: o.slot,
-        cell: { ...o.cell },
-        lift: o.lift.value,
-        quality: ease(o.lift.value / 0.4),
-        rotation: o.group.rotation.y,
-        worldY: o.group.position.y,
-        phase: o.returnY !== null ? "aligning" : "lowering",
-      })),
-      rail: Math.round(this.rail.value * 1000) / 1000,
-    };
-  }
 }

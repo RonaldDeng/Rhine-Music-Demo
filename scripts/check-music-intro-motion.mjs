@@ -116,6 +116,7 @@ const declarations = update.body.statements.filter(ts.isVariableStatement)
   .flatMap(node => [...node.declarationList.declarations]);
 const fieldDeclaration = declarations.find(node => node.name.getText(sceneTree) === 'field');
 const fieldCode = ts.transpileModule(`return function sceneField(row, lane, shot, selectedRow, selectedLane, time = 42, opening = true) {
+  const motionTime = time;
   const musicIntro = opening, cinematic = opening ? { musicIntro: true } : undefined;
   const field = ${fieldDeclaration.initializer.getText(sceneTree)};
   return field(row, lane);
@@ -172,6 +173,7 @@ const idleAssignment = update.body.statements.find(node => ts.isExpressionStatem
   ts.isBinaryExpression(node.expression) && node.expression.left.getText(sceneTree) === 'this.idleGain');
 assert.ok(idleDeclaration && idleAssignment, 'Exercise the production idle eligibility and gain update');
 const gainCode = ts.transpileModule(`return function advanceIdle(time, dt, opening) {
+  const motionTime = time;
   const cinematic = opening ? { musicIntro: true } : undefined, musicIntro = opening;
   const aligningCopy = this.outgoing.some(o => o.returnY !== null);
   const idle = ${idleDeclaration.initializer.getText(sceneTree)};

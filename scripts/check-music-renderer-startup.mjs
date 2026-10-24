@@ -134,11 +134,8 @@ assert.deepEqual(cold.calls[0], ["pose", false], "The first pose setup performs 
 assert.deepEqual(cold.calls.filter(call => Array.isArray(call) && call[0] === "prepareVisible"), [["prepareVisible", 1200]]);
 assert.equal(cold.instance.model.visible, false, "Compilation restores the model's original visibility");
 assert.deepEqual(cold.calls.at(-1), ["mode", "hidden"], "Prewarm returns the scene to its hidden opening pose");
-const diagnostics = JSON.parse(cold.instance.container.dataset.startupPreparation);
-assert.equal(diagnostics.glError, 0);
-assert.equal(diagnostics.parallelCompile, true);
-assert.equal(diagnostics.covers.dirtyTiles, 0);
-assert.ok(diagnostics.milliseconds > 0);
+assert.equal(cold.instance.covers.getStats().dirtyTiles, 0, "All initial cover uploads finish before the hidden opening pose");
+assert.deepEqual(cold.instance.container.dataset, {}, "Production startup does not publish diagnostic state");
 
 const unboundedInputs = fixture({ dirtyTiles: 10000 });
 await unboundedInputs.finish(unboundedInputs.instance.prepareMusicRenderer());
@@ -179,7 +176,7 @@ for (const boundary of ["compile", "covers", "uploadFrame", "drawFrame"]) {
   await interrupted.finish(task);
   assert.deepEqual(gpuWork(interrupted.calls), before, `Disposal during ${boundary} prevents all later compile/upload/draw work`);
   assert.equal(interrupted.frames.length, 0);
-  assert.equal(interrupted.instance.container.dataset.startupPreparation, undefined, "An abandoned prewarm cannot report success");
+  assert.ok(!interrupted.calls.some(call => Array.isArray(call) && call[0] === "mode"), "An abandoned prewarm cannot enter the prepared opening pose");
 }
 
 const resources = fixture();

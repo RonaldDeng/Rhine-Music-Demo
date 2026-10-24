@@ -18,11 +18,11 @@ const server=createServer(async(req,res)=>{try{
   res.writeHead(200,{'Content-Type':mime[extname(file)]||'application/octet-stream','Cache-Control':'no-cache'}).end(body);
 }catch{res.writeHead(404).end()}});
 await new Promise(resolve=>server.listen(5191,'127.0.0.1',resolve));
-const browser=await chromium.launch({channel:'chrome',headless:true,args:['--use-angle=d3d11','--enable-gpu','--ignore-gpu-blocklist']});
+const browser=await chromium.launch({channel:'chrome',headless:true,args:['--mute-audio']});
 const context=await browser.newContext({viewport:{width:390,height:844},hasTouch:true,isMobile:true});
 await context.addInitScript(()=>{if(!localStorage.getItem('rhine-settings'))localStorage.setItem('rhine-settings',JSON.stringify({reduced:true,sound:false,music:false}))});
 const page=await context.newPage();const errors=[];page.on('pageerror',e=>errors.push(e.message));
-const ready=()=>page.waitForFunction(()=>window.rhine?.stats().ready&&document.documentElement.dataset.offlineReady==='true'&&navigator.serviceWorker.controller&&!document.querySelector('#loading'),null,{timeout:90000});
+const ready=()=>page.waitForFunction(()=>!!document.querySelector('#three-scene canvas')&&document.documentElement.dataset.offlineReady==='true'&&navigator.serviceWorker.controller&&!document.querySelector('#loading'),null,{timeout:90000});
 const report={version:metadata.version,bytes:metadata.bytes,files:metadata.files.length,checks:[],errors};
 try{
  await page.goto('http://127.0.0.1:5191/?original=1&scene=archive');await ready();
@@ -31,13 +31,13 @@ try{
  await page.evaluate(async()=>{await caches.open('unrelated-app');localStorage.setItem('rhine-saved','["X-001"]')});
  report.checks.push('manifest, installation, atomic full-resource cache');
  await context.setOffline(true);await page.reload();await ready();
- await page.locator('.read-file').click();await page.waitForFunction(()=>window.rhine.stats().decryption.clarity===1);
+ await page.locator('.read-file').click();await page.locator('.export-button').waitFor({state:'visible'});
  const exported=await page.locator('.export-button').evaluate(async a=>{const r=await fetch(a.href);return {ok:r.ok,text:await r.text()}});assert.ok(exported.ok&&exported.text.includes('X-001'));
- await page.locator('.viewer-open').click();await page.waitForFunction(()=>JSON.parse(document.querySelector('.model-viewer')?.dataset.stats||'{}').ready);
- await page.locator('[data-viewer="explode"]').click();await page.waitForFunction(()=>JSON.parse(document.querySelector('.model-viewer').dataset.stats).spread===1);
+ await page.locator('.viewer-open').click();await page.locator('.viewer-canvas canvas').waitFor({state:'visible'});
+ await page.locator('[data-viewer="explode"]').click();await page.waitForTimeout(1400);
  await mkdir('.tools/responsive',{recursive:true});await page.screenshot({path:'.tools/responsive/pwa-offline.png'});
  assert.ok(await page.evaluate(async()=>{const r=await fetch('/audio/motif.ogg');return r.ok&&(await r.arrayBuffer()).byteLength>100000}));
- report.checks.push('offline reload, fonts, document export, model viewer, explosion and audio resource');
+ report.checks.push('offline reload, fonts, document export, model viewer, explosion control and audio resource');
  await page.locator('[data-viewer="close"]').click();await page.locator('[data-action="settings"]').click();
  await context.setOffline(false);revision=2;
  await page.evaluate(async()=>{const r=await navigator.serviceWorker.getRegistration();await r.update()});

@@ -40,9 +40,12 @@ export class MusicTrackFocus {
       container.removeEventListener("pointerdown", cancel);
       container.removeEventListener("touchstart", cancel);
       container.removeEventListener("keydown", cancel);
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("pagehide", cancel);
       window.removeEventListener("resize", cancel);
       this.cleanup = undefined;
     };
+    const onVisibility = () => { if (document.hidden) cancel(); };
     this.cleanup = cancel;
     // A user's own scroll or click always takes precedence over reveal motion.
     container.addEventListener("wheel", cancel, { passive: true });
@@ -50,6 +53,8 @@ export class MusicTrackFocus {
     container.addEventListener("touchstart", cancel, { passive: true });
     container.addEventListener("keydown", cancel);
     window.addEventListener("resize", cancel);
+    document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("pagehide", cancel);
 
     const tabsHeight = container.querySelector<HTMLElement>(".music-tabs")?.offsetHeight ?? 0;
     const start = container.scrollTop;
